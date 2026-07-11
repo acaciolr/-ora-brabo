@@ -1,0 +1,662 @@
+/* --- Global & Defaults --- */
+* {
+    scrollbar-background: #161e31;
+    scrollbar-background-hover: #161e31;
+    scrollbar-background-active: #161e31;
+
+    scrollbar-color: #33405d;
+    scrollbar-color-hover: #404f71;
+    scrollbar-color-active: #4f608a;
+
+    color: #e9e9e9;
+}
+
+#_default, CommandScreen, EventLog {
+    background: #0a0e1b;
+}
+
+Screen.-maximized-view {
+    height: 100%;
+
+    & .metric_graph_container,
+    & .metric_graph_container2,
+    & TabPane {
+        height: 1fr !important;
+    }
+    & Tabs {
+        margin-top: 0;
+    }
+    & DataTable {
+        height: 100% !important;
+        max-height: 100% !important;
+    }
+}
+
+/* --- Layout Widgets --- */
+Graph { height: 100%; }
+Horizontal { height: auto; }
+
+Rule {
+    color: #32416a;
+    margin: 0;
+}
+
+Center > * {
+    /* General spacing for items inside Center layouts */
+    margin-bottom: 0;
+}
+
+/* --- Data Tables --- */
+DataTable {
+    background: #0f1525;
+    overflow-x: hidden;
+    max-height: 40;
+
+    &:focus {
+        background-tint: #0f1525;
+    }
+    & > .datatable--odd-row {
+        background: #131a2c;
+    }
+    & > .datatable--even-row {
+        background: #0f1525;
+    }
+    & > .datatable--header {
+        background: transparent;
+        color: #c5c7d2;
+    }
+}
+
+/* Horizontal scrolling specific tables */
+#pfs_metrics_file_io_datatable,
+#pfs_metrics_table_io_waits_datatable,
+#proxysql_hostgroup_summary_datatable,
+#proxysql_mysql_query_rules_datatable {
+    overflow-x: auto;
+}
+
+/* --- Indicators & Overlays --- */
+LoadingIndicator, SpinnerWidget {
+    color: #8fb0ee;
+    height: auto;
+    content-align: center middle;
+}
+
+LoadingIndicator { margin-top: 3; }
+
+ModalScreen {
+    background: #0d1015 70%;
+    align: center middle;
+    height: 40;
+    color: #4d5a85;
+}
+
+Toast {
+    width: auto;
+    max-width: 50%;
+    background: #20283e;
+    border-right: wide #192036;
+
+    &.-information { border-left: wide #788bc9; }
+    &.-warning     { border-left: wide #f0e357; }
+
+    &.-success {
+        border-left: wide #5bd088;
+        & .toast--title { color: #6ae398; }
+    }
+    
+    &.-error {
+        border-left: wide #f05757;
+        & .toast--title { color: #ed6363; }
+    }
+}
+
+/* --- Command Palette & Input --- */
+CommandPalette {
+    background: #0d1015 70%;
+
+    & > Vertical {
+        background: #0a0e1b;
+    }
+    & #--input {
+        border-top: hkey #1c2440;
+    }
+}
+
+CommandList {
+    text-style: none;
+    border-bottom: hkey #1c2440;
+    max-height: 80vh;
+
+    & > .option-list--option {
+        text-style: none;
+        padding: 0;
+    }
+    /* Combine hover and highlight states */
+    & > .option-list--option-highlighted,
+    & > .option-list--option-hover {
+        color: #b7c7ee;
+        background: #171e2f;
+        text-style: bold;
+    }
+}
+
+CommandInput, CommandInput:focus {
+    background: #0a0e1b !important;
+    width: 1fr !important;
+    border: blank !important;
+    padding-left: 0 !important;
+    margin: 0 1 !important;
+}
+
+AutoComplete {
+    & AutoCompleteList {
+        background: #151926;
+        border: none !important;
+        border-left: wide #384673;
+        margin: 0;
+        width: auto;
+        height: auto;
+        max-height: 100%;
+
+        &:hover {
+            border: none !important;
+            border-left: wide #384673;
+        }
+
+        & > .option-list--option-hover {
+            background: #2c3757;
+            color: #cbdbfe;
+            text-style: bold;
+        }
+
+        & > .option-list--option-highlighted {
+            background: #22293e;
+            color: #9babd4;
+            text-style: bold;
+        }
+    }
+
+    & .autocomplete--highlight-match {
+        color: #c7d734;
+        background: #384673;
+        text-style: bold;
+    }
+
+    & .option-list--option-highlighted {
+        background: #22293e;
+        color: #9babd4;
+        text-style: bold;
+    }
+}
+
+/* --- Top Bar --- */
+TopBar {
+    dock: top;
+    background: #192036;
+    height: 1;
+    layout: horizontal;
+
+    & #topbar_title {
+        width: 15%;
+        content-align: left middle;
+    }
+    & #topbar_host {
+        color: #bbc8e8;
+        width: 70%;
+        content-align: center middle;
+        text-style: bold;
+    }
+    & #topbar_help {
+        width: 15%;
+        content-align: right middle;
+        color: #8f9fc1;
+    }
+}
+
+/* --- Dashboard & Replay --- */
+.panel_title {
+    color: #bbc8e8;
+    text-style: bold;
+    width: 100%;
+    content-align: center middle;
+}
+
+#statements_summary_radio_set {
+    margin-bottom: 1;
+}
+
+.dashboard {
+    height: auto;
+
+    & > Center {
+        height: auto;
+        layout: horizontal;
+        content-align: center middle;
+
+        & > * {
+            content-align: center top;
+            height: 11;
+            width: auto;
+            padding: 0 1; /* Shorthand padding */
+        }
+    }
+}
+
+.dashboard_replay {
+    height: auto;
+    width: 65;
+    content-align: center middle;
+    align: center middle;
+}
+
+#dashboard_replay_progressbar {
+    width: 100%;
+
+    & > #bar { width: 65; }
+    & > #bar > .bar--bar {
+        color: #91abec;
+        background: #3a3f51;
+    }
+    & > #bar > .bar--complete {
+        color: #54efae;
+    }
+}
+
+.replay_buttons {
+    height: auto;
+    width: 65;
+    background: #20283b;
+    border-top: tall #192033;
+    border-bottom: tall #192033;
+}
+
+.replay_button {
+    text-style: none;
+    background: transparent;
+    background-tint: transparent;
+    border: none;
+    tint: transparent 0%;
+
+    /* Combine hover and focus */
+    &:hover, &:focus {
+        background: transparent;
+        color: #91abec;
+        text-style: bold;
+        border: none;
+        tint: transparent 0%;
+    }
+
+    &.-active {
+        color: #5475c7;
+        text-style: bold;
+        background: transparent;
+        border: none;
+        tint: transparent 0%;
+    }
+
+    /* Boundary-disabled (start/end of replay): dim and non-interactive */
+    &:disabled {
+        color: #969aad;
+        text-style: none;
+        background: transparent;
+        tint: transparent 0%;
+    }
+}
+
+/* --- Panels (Graphs, Replication, Replicas) --- */
+.panel_container {
+    height: auto;
+    width: 100%;
+    background: #0f1525;
+    border: tall #1b233a;
+    margin-bottom: 1;
+
+    & > Label {
+        width: 100%;
+        color: #bbc8e8;
+        text-style: bold;
+        content-align: center middle;
+    }
+    & #statements_summary_info {
+        content-align: left middle;
+        margin-left: 1;
+    }
+}
+
+#panel_graphs, #panel_replication {
+    height: auto;
+    & Tabs { margin-top: 0; }
+}
+
+#panel_graphs {
+    & .metric_graph_container, 
+    & .metric_graph_container2  {
+        height: 19;
+    }
+    & .metric_graph_stats {
+        width: 100%;
+        content-align: center middle;
+    }
+}
+
+.replication {
+    height: auto;
+    margin-bottom: 1;
+
+    & > Label {
+        width: 100%;
+        content-align: center middle;
+    }
+    & > .replication_status_grid {
+        height: auto;
+        align-horizontal: center;
+        margin-bottom: 1;
+
+        & > ScrollableContainer {
+            content-align: center top;
+            background: #0f1525;
+            border: tall #1b233a;
+            height: auto;
+            max-height: 22;
+            max-width: 85;
+        }
+
+        &.multi_source {
+            layout: grid;
+            grid-size: 2;
+            grid-gutter: 1 0;
+
+            & > ScrollableContainer {
+                max-width: 100%;
+            }
+        }
+    }
+    & > Center {
+        height: auto;
+        layout: horizontal;
+        content-align: center middle;
+
+        & > ScrollableContainer {
+            content-align: center top;
+            background: #0f1525;
+            border: tall #1b233a;
+            height: auto;
+            max-height: 18;
+        }
+        & > .replication_status { max-width: 85; }
+        & > .replication_thread_applier { max-width: 105; }
+    }
+}
+
+.replicas, .group_replication {
+    height: auto;
+    margin-bottom: 1;
+
+    & > Container {
+        height: auto;
+        layout: grid;
+        grid-size: 2;
+        grid-gutter: 1 0;
+        
+        & > ScrollableContainer  {
+            background: #0f1525;
+            border: tall #1b233a;
+            height: auto;
+            max-height: 20;
+        }
+    }
+    & > Label, & > Static {
+        width: 100%;
+        content-align: center middle;
+    }
+    & > LoadingIndicator {
+        margin-top: 0;
+    }
+}
+
+.group_replication > Container {
+    grid-size: 3;
+}
+
+/* --- Tabs --- */
+TabPane { padding: 0; }
+Tabs {
+    margin-top: 1;
+
+    &:focus {
+        & .-active { background: #0a0e1b; }
+        & .underline--bar { color: #caddfe; }
+    }
+}
+
+Tab {
+    /* Consolidate all bold states */
+    &:focus, &:hover, &.-active, &.-active:focus {
+        text-style: bold;
+    }
+}
+
+Underline > .underline--bar {
+    background: #283357;
+    color: #82a5e1;
+}
+
+/* --- Form Controls --- */
+
+TextArea, Input, Select, OptionList {
+    background: transparent;
+    border: heavy #252e49;
+    border-title-color: #bbc5dc;
+    margin: 0 1 0 1;
+    width: 100%;
+
+    &:hover {
+        border: heavy #32416d;
+    }
+
+    &:focus {
+        border: heavy #43548b;
+        border-title-color: #B1C4F2;
+        background-tint: transparent;
+    }
+
+    & > .input--placeholder {
+        color: #5e6b87;
+    }
+}
+
+
+SelectCurrent {
+    background: transparent;
+    border: none;
+
+    & Static#label { color: #606e88; }
+    &.-has-value Static#label { color: #e9e9e9; }
+}
+
+Select > OptionList {
+    background: #111322;
+    border: round #252e49;
+    width: 100%;
+    height: 15;
+    margin: 0;
+
+    &:focus {
+        margin: 0;
+        height: auto;
+        max-height: 15;
+        background: transparent;
+        border: round #43548b;
+    }
+
+    /* Option States */
+    & > .option-list--option-highlighted {
+        background: #22293e;
+        color: #9babd4;
+        text-style: bold;
+    }
+    & > .option-list--option-hover,
+    & > .option-list--option-hover-highlighted,
+    &:focus > .option-list--option-hover-highlighted {
+        background: #35405f;
+        color: #cbdbfe;
+        text-style: bold;
+    }
+}
+
+/* Buttons */
+.button_container {
+    height: auto;
+    width: 100%;
+    align-horizontal: center;
+    margin-top: 1;
+}
+
+Button {
+    background: #282c42;
+    border-top: tall #54597b;
+    border-bottom: tall #171922;
+
+    &:hover {
+        background: #383e5c;
+        border-top: tall #69709a;
+    }
+    &:focus {
+        background: #383e5c;
+        border-top: tall #69709a;
+        text-style: bold;
+    }
+
+    &.-primary {
+        background: #192c5b;
+        border-top: tall #425894;
+        border-bottom: tall #151b2b;
+        
+        &:hover {
+            background: #203875;
+            border-top: tall #4a62a4;
+        }
+        &:focus {
+            background: #203875;
+            border-top: tall #4a62a4;
+            text-style: bold;
+        }
+    }
+}
+
+/* Switches & Toggles */
+.switch_container {
+    align: center top;
+    margin: 1 0;
+    height: auto;
+
+    & > Label {
+        color: #bbc8e8;
+        padding-left: 1;
+        text-style: bold;
+    }
+}
+
+Switch {
+    background: #0a0e1b;
+    border: none #364774;
+
+    &:focus { background-tint: transparent; }
+
+    & > .switch--slider {
+        color: #424d6f;
+        background: #192132;
+    }
+    /* Combined focus/hover slider states */
+    &:focus > .switch--slider, 
+    &:hover > .switch--slider {
+        color: #fd8383;
+    }
+
+    &.-on {
+        & > .switch--slider { color: #5c81d7; }
+        &:focus > .switch--slider, 
+        &:hover > .switch--slider { 
+            color: #54efae; 
+        }
+    }
+}
+
+Checkbox {
+    background: #131626;
+    border: none;
+    padding-left: 2;
+    padding-bottom: 1;
+    content-align: left middle;
+
+    & .toggle--button {
+        color: #0f1525;
+        text-style: bold;
+        background: #343d56;
+    }
+}
+
+RadioSet {
+    background: transparent;
+    border: none;
+    layout: horizontal;
+    width: 100%;
+
+    &:focus {
+        background-tint: transparent;
+
+        & > RadioButton.-selected > .toggle--label {
+            text-style: bold;
+            color: #a5b8e7;
+        }
+
+        & > .toggle--label {
+            text-style: bold;
+        }
+    }
+}
+
+RadioButton {
+    background: transparent;
+    margin-right: 2;
+    width: auto;
+
+    & > .toggle--label {
+        background: transparent !important;
+    }
+
+    & > .toggle--button {
+        color: #0f1525;
+        background: #343d56;
+    }
+}
+
+ToggleButton {
+    background: transparent !important;
+    &:focus, &:hover {
+        background-tint: transparent;
+        & > .toggle--label {
+            text-style: bold;
+            color: #a5b8e7;
+            background: transparent !important;
+        }
+    }
+    &.-on {
+        background: transparent;
+        & > .toggle--button {
+            text-style: bold;
+            color: #74e3b5;
+            background: #305240;
+        }
+    }
+}
+/* Sparklines */
+Sparkline {
+    margin: 0 1 1 1;
+    & > .sparkline--max-color { color: #869fd9; }
+    & > .sparkline--min-color { color: #384c7a; }
+}
+
+.pad_top_1 { margin-top: 1; }
+.pad_bottom_1 { margin-bottom: 1; }

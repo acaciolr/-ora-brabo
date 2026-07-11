@@ -1,0 +1,50 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.backends.legacy:build"
+
+[project]
+name = "ora-brabo"
+version = "1.1.0"
+description = "Oracle Database TUI Monitor — inspired by Dolphie, powered by Textual"
+readme = "README.md"
+requires-python = ">=3.12"
+license = { text = "MIT" }
+authors = [
+    { name = "Acacio Lima Rocha", email = "acaciolr@gmail.com" },
+]
+keywords = ["oracle", "dba", "tui", "monitoring", "database"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Environment :: Console",
+    "Intended Audience :: System Administrators",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Database",
+    "Topic :: System :: Monitoring",
+]
+dependencies = [
+    "oracledb>=2.0.0",
+    "textual>=0.52.0",
+    "rich>=13.7.0",
+    "plotext>=5.0.0",
+    "keyring>=24.0.0",
+]
+
+[project.scripts]
+ora-brabo = "app:main"
+
+[project.urls]
+Repository = "https://github.com/dbabrabo/ora-brabo"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["core*", "collectors*", "widgets*", "advisor*", "shell*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+
+[tool.ruff]
+line-length = 110
+target-version = "py312"

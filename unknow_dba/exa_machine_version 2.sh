@@ -1,0 +1,1 @@
+grep -i MACHINETYPES /opt/oracle.SupportTools/onecommand/databasemachine.xml

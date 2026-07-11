@@ -1,0 +1,116 @@
+/* ORA BRABO — Dark Theme (GitHub dark palette) */
+
+Screen {
+    background: #0d1117;
+    color: #e6edf3;
+}
+
+Header {
+    background: #1c2128;
+    color: #58a6ff;
+    text-style: bold;
+    height: 1;
+}
+
+Footer {
+    background: #1c2128;
+    color: #8b949e;
+    height: 1;
+}
+
+/* ── Connection tab bar ─────────────────────────────────────────── */
+
+#main-vertical {
+    height: 1fr;
+    width: 1fr;
+}
+
+Tabs {
+    background: #161b22;
+    border-bottom: solid #30363d;
+    height: 3;
+    padding: 0;
+}
+
+Tab {
+    background: #0d1117;
+    color: #8b949e;
+    padding: 0 2;
+}
+
+Tab:hover {
+    color: #e6edf3;
+    background: #1c2128;
+}
+
+Tab.-active {
+    background: #1c2128;
+    color: #58a6ff;
+    text-style: bold;
+    border-top: solid #58a6ff;
+}
+
+
+/* ── ContentSwitcher fills the remaining space ──────────────────── */
+
+ContentSwitcher {
+    height: 1fr;
+    width: 1fr;
+}
+
+ConnectionPane {
+    height: 1fr;
+    width: 1fr;
+}
+
+/* ── Panels ─────────────────────────────────────────────────────── */
+
+.hidden {
+    display: none;
+}
+
+BasePanel {
+    background: #0d1117;
+    padding: 0 1;
+    height: 100%;
+    overflow-y: scroll;
+}
+
+DataTable {
+    background: #161b22;
+    color: #e6edf3;
+    height: auto;
+    max-height: 50vh;
+    border: solid #30363d;
+    border-title-color: #58a6ff;
+    border-title-style: bold;
+    border-subtitle-color: #8b949e;
+}
+
+DataTable > .datatable--header {
+    background: #1c2128;
+    color: #58a6ff;
+    text-style: bold;
+}
+
+DataTable > .datatable--cursor {
+    background: #1f6feb;
+    color: #ffffff;
+}
+
+DataTable > .datatable--even-row {
+    background: #161b22;
+}
+
+DataTable > .datatable--odd-row {
+    background: #0d1117;
+}
+
+Static {
+    margin-bottom: 1;
+}
+
+Label {
+    color: #8b949e;
+    margin: 0 1;
+}

@@ -1,0 +1,5 @@
+oracledb>=2.0.0
+textual>=0.52.0
+rich>=13.7.0
+plotext>=5.0.0
+keyring>=24.0.0
