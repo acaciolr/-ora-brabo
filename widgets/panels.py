@@ -4045,3 +4045,61 @@ class ParallelQueryPanel(BasePanel):
             )
         if dt.row_count and cursor > 0:
             dt.move_cursor(row=min(cursor, dt.row_count - 1))
+
+
+# ---------------------------------------------------------------------------
+# REPORT
+# ---------------------------------------------------------------------------
+
+class ReportPanel(BasePanel):
+    REFRESH_RATE = 5
+
+    def compose(self) -> ComposeResult:
+        yield Static(id="report-status")
+        yield Static(id="report-history")
+
+    async def refresh_data(self) -> None:
+        from reports.generator import REPORTS_DIR
+
+        hint = Text.from_markup(
+            "[bold]PDF Performance/Health Report[/]\n"
+            "[dim]Press [bold]G[/bold] to generate a report for this connection "
+            "(works with a live database or demo mode).[/]"
+        )
+        self.query_one("#report-status", Static).update(
+            Panel(hint, title="[bold blue]Report[/]", border_style="blue", padding=(0, 1))
+        )
+
+        t = Table(show_header=True, header_style="bold blue", box=None, padding=(0, 1))
+        for col in ["File", "Generated", "Size"]:
+            t.add_column(col)
+
+        files: list = []
+        if REPORTS_DIR.exists():
+            files = sorted(REPORTS_DIR.glob("*.pdf"), key=lambda p: p.stat().st_mtime, reverse=True)[:15]
+
+        for f in files:
+            stat = f.stat()
+            t.add_row(
+                f.name,
+                datetime.fromtimestamp(stat.st_mtime).strftime("%Y-%m-%d %H:%M:%S"),
+                f"{stat.st_size / 1024:.1f} KB",
+            )
+        if not files:
+            t.add_row("[dim]No reports generated yet[/]", "", "")
+
+        self.query_one("#report-history", Static).update(
+            Panel(t, title=f"[bold blue]Generated Reports — {REPORTS_DIR}[/]", border_style="blue", padding=(0, 1))
+        )
+
+    async def action_generate(self) -> None:
+        from reports.generator import REPORTS_DIR, generate_report
+
+        self.app.notify("Generating PDF report…", timeout=5)
+        try:
+            path = await asyncio.to_thread(generate_report, self.cache, REPORTS_DIR)
+            self.app.notify(f"Report saved: {path}", severity="information", timeout=10)
+            await self.refresh_data()
+        except Exception as exc:
+            log.exception("Report generation failed")
+            self.app.notify(f"Report generation failed: {exc}", severity="error", timeout=10)

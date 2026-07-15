@@ -67,6 +67,7 @@ class OraBraboApp(App):
         Binding("ctrl+6", "show_panel('waitchains')",   "Wait Chains",  show=True),
         Binding("ctrl+7", "show_panel('planbaselines')", "Plan Baselines", show=True),
         Binding("ctrl+8", "show_panel('parallelquery')", "Parallel Query", show=True),
+        Binding("ctrl+9", "show_panel('report')",        "Report",         show=True),
         # ── Tab management ──────────────────────────────────────────────
         Binding("ctrl+n", "new_connection", "New Tab",   show=True),
         Binding("ctrl+w", "close_tab",      "Close Tab", show=True),
@@ -75,6 +76,7 @@ class OraBraboApp(App):
         Binding("t", "trace_session", "Trace",      show=False),
         Binding("e", "explain_plan",  "Explain",    show=False),
         Binding("r", "generate_awr",  "AWR Report", show=False),
+        Binding("g", "generate_report", "PDF Report", show=True),
         # ── App ────────────────────────────────────────────────────────
         Binding("?", "help",  "Help", show=False),
         Binding("q", "quit",  "Quit", show=True),
@@ -199,6 +201,11 @@ class OraBraboApp(App):
         pane = self._active_pane()
         if pane:
             await pane.forward_awr()
+
+    async def action_generate_report(self) -> None:
+        pane = self._active_pane()
+        if pane:
+            await pane.forward_generate_report()
 
     def action_help(self) -> None:
         from widgets.help_screen import HelpScreen

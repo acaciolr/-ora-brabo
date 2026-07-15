@@ -514,6 +514,19 @@ _OBJ_TOP_SEGMENTS = [
     {"owner": "APP_SCHEMA", "object_name": "TRANSACTIONS",     "object_type": "TABLE",  "tablespace_name": "APP_DATA", "statistic_name": "buffer busy waits","value": 124},
 ]
 
+_OBJ_BIGGEST_SEGMENTS = [
+    {"owner": "DWH",        "segment_name": "FACT_SALES",        "segment_type": "TABLE",         "tablespace_name": "DWH_DATA", "size_mb": 184320.0},
+    {"owner": "APP_SCHEMA", "segment_name": "TRANSACTIONS",      "segment_type": "TABLE",         "tablespace_name": "APP_DATA", "size_mb": 92480.0},
+    {"owner": "APP_SCHEMA", "segment_name": "AUDIT_LOG",         "segment_type": "TABLE",         "tablespace_name": "APP_DATA", "size_mb": 48200.0},
+    {"owner": "APP_SCHEMA", "segment_name": "ORDERS",            "segment_type": "TABLE",         "tablespace_name": "APP_DATA", "size_mb": 31840.0},
+    {"owner": "APP_SCHEMA", "segment_name": "TRANSACTIONS_PK",   "segment_type": "INDEX",         "tablespace_name": "APP_IDX",  "size_mb": 18420.0},
+    {"owner": "DWH",        "segment_name": "FACT_SALES_IDX01",  "segment_type": "INDEX",         "tablespace_name": "DWH_IDX",  "size_mb": 15680.0},
+    {"owner": "APP_SCHEMA", "segment_name": "ORDER_ITEMS",       "segment_type": "TABLE",         "tablespace_name": "APP_DATA", "size_mb": 9840.0},
+    {"owner": "APP_SCHEMA", "segment_name": "ORDERS_PK",         "segment_type": "INDEX",         "tablespace_name": "APP_IDX",  "size_mb": 6420.0},
+    {"owner": "APP_SCHEMA", "segment_name": "CUSTOMERS",         "segment_type": "TABLE",         "tablespace_name": "APP_DATA", "size_mb": 4180.0},
+    {"owner": "DWH",        "segment_name": "DIM_CUSTOMER",      "segment_type": "TABLE",         "tablespace_name": "DWH_DATA", "size_mb": 2840.0},
+]
+
 _OBJ_STALE_STATS = [
     {"owner": "APP_SCHEMA", "table_name": "TRANSACTIONS",   "num_rows": 4821000000, "last_analyzed": datetime.now()-timedelta(days=12), "stale_stats": "YES", "stattype_locked": None, "days_since_analyze": 12.0, "dml_since_analyze": 8420000},
     {"owner": "APP_SCHEMA", "table_name": "AUDIT_LOG",      "num_rows": 184200000,  "last_analyzed": datetime.now()-timedelta(days=8),  "stale_stats": "YES", "stattype_locked": None, "days_since_analyze": 8.0,  "dml_since_analyze": 4820000},
@@ -822,6 +835,7 @@ class DemoRunner:
         c.set("obj.wait_chains",      _OBJ_WAIT_CHAINS,       ttl=86400)
         c.set("obj.plan_baselines",   _OBJ_PLAN_BASELINES,    ttl=86400)
         c.set("obj.px_sessions",      _OBJ_PX_SESSIONS,       ttl=86400)
+        c.set("obj.biggest_segments", _OBJ_BIGGEST_SEGMENTS,  ttl=86400)
         # SQL Monitor
         c.set("sqlmon.active", _SQLMON_ACTIVE, ttl=86400)
         c.set("sqlmon.recent", _SQLMON_RECENT, ttl=86400)

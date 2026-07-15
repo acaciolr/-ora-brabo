@@ -4,11 +4,21 @@ Segment statistics, stale stats, scheduler jobs, wait chains,
 SQL Plan Baselines, and Parallel Query monitoring.
 Cache keys: obj.top_segments, obj.stale_stats, obj.scheduler_jobs,
             obj.scheduler_history, obj.wait_chains, obj.plan_baselines,
-            obj.px_sessions
+            obj.px_sessions, obj.biggest_segments
 """
 from __future__ import annotations
 
 from collectors.base import BaseCollector
+
+_SQL_BIGGEST_SEGMENTS = """
+SELECT * FROM (
+    SELECT owner, segment_name, segment_type, tablespace_name,
+           bytes / 1048576 AS size_mb
+    FROM dba_segments
+    WHERE owner NOT IN ('SYS','SYSTEM','DBSNMP','SYSMAN','XDB','APEX_PUBLIC_USER','OUTLN','ORACLE_OCM')
+    ORDER BY bytes DESC
+) WHERE ROWNUM <= 20
+"""
 
 _SQL_TOP_SEGMENTS = """
 SELECT * FROM (
@@ -123,3 +133,6 @@ class ObjectsCollector(BaseCollector):
 
         px_sessions = await self.conn.execute_query(_SQL_PX_SESSIONS)
         self.cache.set("obj.px_sessions", px_sessions or [], ttl=ttl)
+
+        biggest_segments = await self.conn.execute_query(_SQL_BIGGEST_SEGMENTS)
+        self.cache.set("obj.biggest_segments", biggest_segments or [], ttl=300)

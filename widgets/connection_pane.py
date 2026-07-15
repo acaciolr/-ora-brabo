@@ -34,6 +34,7 @@ from widgets.panels import (
     WaitChainPanel,
     PlanBaselinesPanel,
     ParallelQueryPanel,
+    ReportPanel,
 )
 
 log = logging.getLogger(__name__)
@@ -62,6 +63,7 @@ _PANELS: list[tuple[str, type]] = [
     ("waitchains",   WaitChainPanel),
     ("planbaselines",PlanBaselinesPanel),
     ("parallelquery",ParallelQueryPanel),
+    ("report",       ReportPanel),
 ]
 
 
@@ -170,6 +172,15 @@ class ConnectionPane(Widget):
         sid = self.session.id
         try:
             panel = self.query_one(f"#panel-awr-{sid}")
+            if hasattr(panel, "action_generate"):
+                await panel.action_generate()
+        except Exception:
+            pass
+
+    async def forward_generate_report(self) -> None:
+        sid = self.session.id
+        try:
+            panel = self.query_one(f"#panel-report-{sid}")
             if hasattr(panel, "action_generate"):
                 await panel.action_generate()
         except Exception:
