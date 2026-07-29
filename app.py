@@ -224,7 +224,18 @@ class OraBraboApp(App):
             await session.connect()
         except Exception as exc:
             log.error("Connection failed: %s", exc)
-            self.notify(f"Connection failed: {exc}", severity="error", timeout=12)
+            msg = str(exc)
+            if "DPY-3010" in msg:
+                # Thin-mode asyncio only supports Oracle Database 12.1+.
+                # Thick mode (which reaches 11g) has no asyncio API, so it is
+                # not compatible with this tool's async architecture.
+                msg = (
+                    "Banco Oracle 11.2 ou anterior não é suportado.\n"
+                    "Esta ferramenta usa o modo Thin assíncrono, que conecta "
+                    "apenas em Oracle Database 12.1 ou superior.\n"
+                    "(O modo Thick alcançaria o 11g, mas não possui API async.)"
+                )
+            self.notify(f"Connection failed: {msg}", severity="error", timeout=15)
             return
 
         self._sessions[session.id] = session

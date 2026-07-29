@@ -295,9 +295,9 @@ class AddConnectionModal(ModalScreen[AppConfig | None]):
                             placeholder="/path/to/Wallet_mydb.zip",
                             id="inp-wallet-zip",
                         )
-                        yield Label("Wallet Password  (blank = cwallet.sso auto-login)")
+                        yield Label("Wallet Password  (blank = usa a senha da conexão)")
                         yield Input(
-                            placeholder="optional",
+                            placeholder="deixe vazio p/ usar a senha acima",
                             password=True,
                             id="inp-wallet-password",
                         )
@@ -344,17 +344,20 @@ class AddConnectionModal(ModalScreen[AppConfig | None]):
     # Lifecycle
     # ─────────────────────────────────────────────────────────────────
 
-    def on_mount(self) -> None:
-        self._reload_saved_list()
+    async def on_mount(self) -> None:
+        await self._reload_saved_list()
 
-    def _reload_saved_list(self) -> None:
+    async def _reload_saved_list(self) -> None:
         self._saved = load_connections()
         lv = self.query_one("#saved-list", ListView)
-        lv.clear()
+        # clear() is async in Textual — it only *schedules* removal. We must
+        # await it before re-appending, otherwise the old "saved-N" ListItems
+        # still exist when the new ones are added → DuplicateIds crash.
+        await lv.clear()
 
         if self._saved:
             for i, conn in enumerate(self._saved):
-                lv.append(ListItem(Label(conn.display_label), id=f"saved-{i}"))
+                await lv.append(ListItem(Label(conn.display_label), id=f"saved-{i}"))
             self.query_one("#saved-list").remove_class("hidden")
             self.query_one("#no-saved").add_class("hidden")
             self.query_one("#btn-delete").remove_class("hidden")
@@ -429,13 +432,13 @@ class AddConnectionModal(ModalScreen[AppConfig | None]):
     # Buttons
     # ─────────────────────────────────────────────────────────────────
 
-    def on_button_pressed(self, event: Button.Pressed) -> None:
+    async def on_button_pressed(self, event: Button.Pressed) -> None:
         if event.button.id == "btn-cancel":
             self.dismiss(None)
         elif event.button.id == "btn-connect":
             self._submit()
         elif event.button.id == "btn-delete":
-            self._delete_highlighted()
+            await self._delete_highlighted()
         elif event.button.id == "btn-demo":
             self._launch_demo()
 
@@ -446,14 +449,14 @@ class AddConnectionModal(ModalScreen[AppConfig | None]):
     # Delete saved connection
     # ─────────────────────────────────────────────────────────────────
 
-    def _delete_highlighted(self) -> None:
+    async def _delete_highlighted(self) -> None:
         if self._highlighted_idx < 0 or self._highlighted_idx >= len(self._saved):
             self.app.notify("Select a connection to delete.", severity="warning")
             return
         conn = self._saved[self._highlighted_idx]
         remove_connection(conn.label, conn.host, conn.service)
         self._highlighted_idx = -1
-        self._reload_saved_list()
+        await self._reload_saved_list()
         self.app.notify(f"Removed: {conn.display_label}")
 
     # ─────────────────────────────────────────────────────────────────
@@ -549,6 +552,7 @@ class AddConnectionModal(ModalScreen[AppConfig | None]):
         if not wallet_zip:
             self.app.notify("Wallet ZIP path is required.", severity="error")
             return None
+        wallet_zip = _normalize_wallet_path(wallet_zip)
         if not Path(wallet_zip).expanduser().exists():
             self.app.notify(f"File not found: {wallet_zip}", severity="error")
             return None
@@ -557,7 +561,10 @@ class AddConnectionModal(ModalScreen[AppConfig | None]):
         except ValueError:
             refresh = 5
 
-        wallet_pw = self.query_one("#inp-wallet-password", Input).value or None
+        # Blank wallet password → reuse the connection password. Thin mode
+        # always needs *a* password to decrypt ewallet.pem, otherwise the
+        # ssl layer prompts "Enter PEM pass phrase:" and hangs the TUI.
+        wallet_pw = self.query_one("#inp-wallet-password", Input).value or password
 
         return AppConfig(
             label=label or None,
@@ -571,6 +578,32 @@ class AddConnectionModal(ModalScreen[AppConfig | None]):
             refresh_interval=max(1, refresh),
             sysdba=sysdba,
         )
+
+
+# ─────────────────────────────────────────────────────────────────────
+# Helper — normalize Windows paths to WSL when running under WSL
+# ─────────────────────────────────────────────────────────────────────
+
+def _normalize_wallet_path(path: str) -> str:
+    """Convert a Windows path (C:\\Users\\...) to its WSL mount (/mnt/c/Users/...).
+
+    Only rewrites when running inside WSL and the input looks like a Windows
+    drive path. Otherwise returns the path unchanged.
+    """
+    import re
+
+    m = re.match(r"^([A-Za-z]):[\\/](.*)$", path.strip())
+    if not m:
+        return path
+
+    drive, rest = m.group(1).lower(), m.group(2).replace("\\", "/")
+    wsl_path = f"/mnt/{drive}/{rest}"
+
+    # Only rewrite if the WSL mount actually resolves (i.e. we're under WSL).
+    from pathlib import Path
+    if Path(wsl_path).exists():
+        return wsl_path
+    return path
 
 
 # ─────────────────────────────────────────────────────────────────────

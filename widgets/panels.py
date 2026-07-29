@@ -973,6 +973,10 @@ class WaitsPanel(BasePanel):
 
 class LocksPanel(BasePanel):
 
+    # Locks mudam devagar e o operador precisa de tempo pra ler o bloqueio.
+    # Sem esse override herdava o padrão de 1s, que piscava rápido demais.
+    REFRESH_RATE = 5
+
     def compose(self) -> ComposeResult:
         yield Static(id="locks-summary")
         yield Static(id="locks-detail")

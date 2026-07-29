@@ -110,8 +110,14 @@ class ConnectionManager:
             mode=mode,
             timeout=self.config.connection_timeout,
         )
-        if self.config.wallet_password:
-            kwargs["wallet_password"] = self.config.wallet_password
+        # Thin mode decrypts ewallet.pem with wallet_password. We must ALWAYS
+        # pass it — otherwise Python's ssl layer drops to an interactive
+        # "Enter PEM pass phrase:" prompt on the tty and hangs the TUI.
+        # If no dedicated wallet password was given, reuse the connection
+        # password so the user only ever supplies one credential.
+        kwargs["wallet_password"] = (
+            self.config.wallet_password or self.config.password or ""
+        )
 
         self._pool = oracledb.create_pool_async(**kwargs)
 
