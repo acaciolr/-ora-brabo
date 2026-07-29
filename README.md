@@ -207,6 +207,7 @@ Inspirada no [Dolphie](https://github.com/charles-001/dolphie) (MySQL), foi cons
 
 | Versão | Suporte |
 |--------|---------|
+| Oracle 11g | ✅ |
 | Oracle 12c R1/R2 | ✅ |
 | Oracle 18c | ✅ |
 | Oracle 19c | ✅ (recomendado) |
