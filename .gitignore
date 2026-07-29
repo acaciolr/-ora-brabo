@@ -1,0 +1,31 @@
+# ─── Python ───────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# ─── Virtualenv ───────────────────────────────────────────
+.venv/
+venv/
+env/
+
+# ─── ORA BRABO ────────────────────────────────────────────
+# Backups datados gerados localmente
+ora_brabo_backup_*.zip
+*.zip
+
+# Runtime / config local
+/tmp/ora_brabo.log
+*.log
+.ora_brabo/
+
+# ─── iCloud / editores ────────────────────────────────────
+# Cópias de conflito do iCloud ("arquivo 2.py")
+* 2.py
+* 2.*
+.DS_Store
+.idea/
+.vscode/

@@ -177,6 +177,18 @@ class AddConnectionModal(ModalScreen[AppConfig | None]):
         width: 10;
     }
 
+    #thick-toggle-row {
+        height: 3;
+        align: left middle;
+        margin-bottom: 1;
+    }
+
+    #thick-toggle-row Label {
+        color: #e3b341;
+        text-style: bold;
+        width: 40;
+    }
+
     #save-row {
         height: 3;
         align: left middle;
@@ -331,6 +343,17 @@ class AddConnectionModal(ModalScreen[AppConfig | None]):
                         yield Label("SYSDBA")
                         yield Switch(value=False, id="sw-sysdba")
 
+                    # Thick mode — Oracle 11g / Native Network Encryption
+                    with Horizontal(id="thick-toggle-row"):
+                        yield Label("Thick mode  (11g / Native Encryption)")
+                        yield Switch(value=False, id="sw-thick")
+                    with Vertical(id="section-thick", classes="hidden"):
+                        yield Label("Instant Client dir  (vazio = usa o PATH)")
+                        yield Input(
+                            placeholder="/opt/oracle/instantclient_21_13",
+                            id="inp-thick-libdir",
+                        )
+
                     with Horizontal(id="save-row"):
                         yield Label("Save this connection")
                         yield Switch(value=False, id="sw-save")
@@ -407,6 +430,13 @@ class AddConnectionModal(ModalScreen[AppConfig | None]):
         self.query_one("#sw-sysdba",   Switch).value = conn.sysdba
         self.query_one("#sw-save",     Switch).value = True  # already saved
 
+        thick = bool(getattr(conn, "thick_mode", False))
+        self.query_one("#sw-thick", Switch).value = thick
+        self.query_one("#section-thick").set_class(not thick, "hidden")
+        self.query_one("#inp-thick-libdir", Input).value = (
+            getattr(conn, "oracle_client_lib_dir", None) or ""
+        )
+
         if use_wallet:
             self.query_one("#inp-wallet-zip",      Input).value = conn.wallet_zip or ""
             self.query_one("#inp-wallet-password", Input).value = conn.wallet_password or ""
@@ -423,6 +453,8 @@ class AddConnectionModal(ModalScreen[AppConfig | None]):
     def on_switch_changed(self, event: Switch.Changed) -> None:
         if event.switch.id == "sw-wallet":
             self._toggle_wallet_sections(event.value)
+        elif event.switch.id == "sw-thick":
+            self.query_one("#section-thick").set_class(not event.value, "hidden")
 
     def _toggle_wallet_sections(self, use_wallet: bool) -> None:
         self.query_one("#section-standard").set_class(use_wallet,      "hidden")
@@ -527,6 +559,8 @@ class AddConnectionModal(ModalScreen[AppConfig | None]):
             self.app.notify("Port and Refresh must be integers.", severity="error")
             return None
 
+        thick, lib_dir = self._read_thick_fields()
+
         return AppConfig(
             label=label or None,
             host=host,
@@ -536,6 +570,8 @@ class AddConnectionModal(ModalScreen[AppConfig | None]):
             password=password,
             refresh_interval=max(1, refresh),
             sysdba=sysdba,
+            thick_mode=thick,
+            oracle_client_lib_dir=lib_dir,
         )
 
     def _build_wallet_config(
@@ -566,6 +602,8 @@ class AddConnectionModal(ModalScreen[AppConfig | None]):
         # ssl layer prompts "Enter PEM pass phrase:" and hangs the TUI.
         wallet_pw = self.query_one("#inp-wallet-password", Input).value or password
 
+        thick, lib_dir = self._read_thick_fields()
+
         return AppConfig(
             label=label or None,
             host="",
@@ -577,7 +615,15 @@ class AddConnectionModal(ModalScreen[AppConfig | None]):
             wallet_password=wallet_pw,
             refresh_interval=max(1, refresh),
             sysdba=sysdba,
+            thick_mode=thick,
+            oracle_client_lib_dir=lib_dir,
         )
+
+    def _read_thick_fields(self) -> tuple[bool, str | None]:
+        """Read the Thick-mode toggle and optional Instant Client dir."""
+        thick = self.query_one("#sw-thick", Switch).value
+        lib_dir = self.query_one("#inp-thick-libdir", Input).value.strip() or None
+        return thick, lib_dir
 
 
 # ─────────────────────────────────────────────────────────────────────

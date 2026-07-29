@@ -21,6 +21,15 @@ class AppConfig:
     wallet_zip: str | None = None       # path to the downloaded wallet .zip
     wallet_password: str | None = None  # ewallet.p12 password (optional for cwallet.sso)
 
+    # ── Thick mode (Oracle Client) ────────────────────────────────────
+    # Enables python-oracledb Thick mode via Oracle Instant Client.
+    # Required for Oracle Database 11g and for servers using Native Network
+    # Encryption (NNE). Thin mode (default) only reaches 12.1+ and TLS.
+    # NOTE: init_oracle_client() is process-global and one-way — once Thick
+    # is enabled, the whole app runs Thick until restart.
+    thick_mode: bool = False
+    oracle_client_lib_dir: str | None = None  # Instant Client dir; None = PATH/default
+
     # ── Display ────────────────────────────────────────────────────────
     label: str | None = None            # tab label (auto-set from db_name if None)
 

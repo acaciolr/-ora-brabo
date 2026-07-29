@@ -63,6 +63,8 @@ class SavedConnection:
     wallet_password: str | None = None
     sysdba: bool = False
     refresh_interval: int = 5
+    thick_mode: bool = False
+    oracle_client_lib_dir: str | None = None
 
     @property
     def display_label(self) -> str:
@@ -90,6 +92,8 @@ class SavedConnection:
             wallet_password=self.wallet_password or None,
             sysdba=self.sysdba,
             refresh_interval=self.refresh_interval,
+            thick_mode=self.thick_mode,
+            oracle_client_lib_dir=self.oracle_client_lib_dir or None,
         )
 
 
@@ -137,6 +141,8 @@ def save_connection(conn: SavedConnection) -> None:
         wallet_password=conn.wallet_password,
         sysdba=conn.sysdba,
         refresh_interval=conn.refresh_interval,
+        thick_mode=conn.thick_mode,
+        oracle_client_lib_dir=conn.oracle_client_lib_dir,
     )
 
     connections = load_connections()
@@ -178,4 +184,6 @@ def from_app_config(config: AppConfig) -> SavedConnection:
         wallet_password=config.wallet_password,
         sysdba=config.sysdba,
         refresh_interval=config.refresh_interval,
+        thick_mode=config.thick_mode,
+        oracle_client_lib_dir=config.oracle_client_lib_dir,
     )

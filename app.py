@@ -3,7 +3,7 @@ ORA BRABO Monitoring Tool
 =========================
 Oracle Database TUI Monitor — inspired by Dolphie, powered by Textual.
 Author : DBA BRABO | Acacio Lima Rocha
-Version: 1.1.0 — multi-tab support
+Version: 1.2.0 — thick mode (Oracle 11g / Native Network Encryption)
 """
 
 from __future__ import annotations
@@ -107,7 +107,7 @@ class OraBraboApp(App):
     # ──────────────────────────────────────────────────────────────────
 
     async def on_mount(self) -> None:
-        log.info("ORA BRABO v1.1.0 starting (multi-tab).")
+        log.info("ORA BRABO v1.2.0 starting (multi-tab, thick mode support).")
         self.set_interval(1.0, self._tick_refresh)
 
         if self._initial_config:
@@ -226,14 +226,26 @@ class OraBraboApp(App):
             log.error("Connection failed: %s", exc)
             msg = str(exc)
             if "DPY-3010" in msg:
-                # Thin-mode asyncio only supports Oracle Database 12.1+.
-                # Thick mode (which reaches 11g) has no asyncio API, so it is
-                # not compatible with this tool's async architecture.
+                # Thin mode reaches only 12.1+. 11g needs Thick mode.
                 msg = (
-                    "Banco Oracle 11.2 ou anterior não é suportado.\n"
-                    "Esta ferramenta usa o modo Thin assíncrono, que conecta "
-                    "apenas em Oracle Database 12.1 ou superior.\n"
-                    "(O modo Thick alcançaria o 11g, mas não possui API async.)"
+                    "Banco Oracle 11.2 ou anterior não conecta em modo Thin.\n"
+                    "Ative o 'Thick mode (11g / Native Encryption)' na tela de "
+                    "conexão. Requer Oracle Instant Client instalado."
+                )
+            elif "DPY-3001" in msg:
+                # Native Network Encryption required — thin unsupported.
+                msg = (
+                    "Este banco exige Native Network Encryption, não suportada "
+                    "em modo Thin.\nAtive o 'Thick mode' na tela de conexão "
+                    "(requer Oracle Instant Client)."
+                )
+            elif "DPI-1047" in msg:
+                # Thick requested but Instant Client not found.
+                msg = (
+                    "Oracle Instant Client não encontrado para o Thick mode.\n"
+                    "Instale o Instant Client e/ou informe o diretório dele no "
+                    "campo 'Instant Client dir' da tela de conexão.\n"
+                    f"Detalhe: {exc}"
                 )
             self.notify(f"Connection failed: {msg}", severity="error", timeout=15)
             return
