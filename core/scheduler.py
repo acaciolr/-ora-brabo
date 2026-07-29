@@ -70,15 +70,30 @@ class Scheduler:
             AlertLogCollector(conn_manager, cache, interval=30),
         ]
 
+    # Collectors backing the first-visible panels (Dashboard/Sessions/SQL/
+    # Waits). Primed first so the initial screen paints almost immediately.
+    _PRIME_PRIORITY = 4
+
     async def run(self) -> None:
         self._running = True
         log.info("Scheduler started with %d collectors.", len(self.collectors))
+
+        # ── Phase 1: prime the cache with one immediate collection ──
+        # Dashboard-critical collectors first, then the rest — all concurrent
+        # (bounded by the pool). This fills panels in ~1s instead of waiting
+        # out a per-collector startup stagger.
+        priority = self.collectors[: self._PRIME_PRIORITY]
+        rest     = self.collectors[self._PRIME_PRIORITY :]
+        await asyncio.gather(*(self._safe_collect(c) for c in priority),
+                             return_exceptions=True)
+        await asyncio.gather(*(self._safe_collect(c) for c in rest),
+                             return_exceptions=True)
+        log.info("Initial collection complete; entering steady state.")
+
+        # ── Phase 2: steady-state interval loops (sleep-first, already primed) ──
         self._tasks = [
-            asyncio.create_task(
-                self._run_collector(c, startup_delay=idx * 0.4),
-                name=c.__class__.__name__,
-            )
-            for idx, c in enumerate(self.collectors)
+            asyncio.create_task(self._steady_loop(c), name=c.__class__.__name__)
+            for c in self.collectors
         ]
         await asyncio.gather(*self._tasks, return_exceptions=True)
 
@@ -89,14 +104,23 @@ class Scheduler:
         await asyncio.gather(*self._tasks, return_exceptions=True)
         log.info("Scheduler stopped.")
 
-    async def _run_collector(self, collector: "BaseCollector", startup_delay: float = 0.0) -> None:
-        if startup_delay:
-            await asyncio.sleep(startup_delay)
+    async def _safe_collect(self, collector: "BaseCollector") -> None:
+        """Run one collection, swallowing errors so one bad collector never
+        blocks the others."""
+        try:
+            await collector.collect()
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            log.warning("Collector %s error: %s", collector.__class__.__name__, exc)
+
+    async def _steady_loop(self, collector: "BaseCollector") -> None:
+        """Interval loop after priming: sleep first, then re-collect."""
         while self._running:
             try:
-                await collector.collect()
+                await asyncio.sleep(collector.interval)
             except asyncio.CancelledError:
                 break
-            except Exception as exc:
-                log.warning("Collector %s error: %s", collector.__class__.__name__, exc)
-            await asyncio.sleep(collector.interval)
+            if not self._running:
+                break
+            await self._safe_collect(collector)

@@ -3,7 +3,7 @@ ORA BRABO Monitoring Tool
 =========================
 Oracle Database TUI Monitor — inspired by Dolphie, powered by Textual.
 Author : DBA BRABO | Acacio Lima Rocha
-Version: 1.2.0 — thick mode (Oracle 11g / Native Network Encryption)
+Version: 1.2.1 — faster initial load (cache priming on connect)
 """
 
 from __future__ import annotations
@@ -107,7 +107,7 @@ class OraBraboApp(App):
     # ──────────────────────────────────────────────────────────────────
 
     async def on_mount(self) -> None:
-        log.info("ORA BRABO v1.2.0 starting (multi-tab, thick mode support).")
+        log.info("ORA BRABO v1.2.1 starting (multi-tab, thick mode, cache priming).")
         self.set_interval(1.0, self._tick_refresh)
 
         if self._initial_config:
