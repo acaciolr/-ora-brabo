@@ -24,8 +24,6 @@ ORDER BY (s.phyrds + s.phywrts) DESC
 _SQL_FUNCTION_STATS = """
 SELECT function_name,
     large_read_reqs, large_write_reqs, small_read_reqs, small_write_reqs,
-    ROUND(large_read_servicetime/NULLIF(large_read_reqs,0),2)  AS avg_large_read_ms,
-    ROUND(small_read_servicetime/NULLIF(small_read_reqs,0),2)  AS avg_small_read_ms,
     ROUND((large_read_megabytes + small_read_megabytes),2)     AS total_read_mb,
     ROUND((large_write_megabytes + small_write_megabytes),2)   AS total_write_mb
 FROM v$iostat_function

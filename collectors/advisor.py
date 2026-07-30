@@ -37,7 +37,7 @@ SELECT * FROM (
         t.advisor_name,
         f.finding_name,
         f.type,
-        ROUND(f.impact_absolute, 1)            AS impact,
+        f.impact                               AS impact,
         f.message
     FROM dba_advisor_findings f
     JOIN dba_advisor_tasks t ON t.task_name = f.task_name
@@ -48,7 +48,7 @@ SELECT * FROM (
                 FROM dba_advisor_tasks WHERE status='COMPLETED'
             ) WHERE rn = 1
       )
-    ORDER BY f.impact_absolute DESC NULLS LAST
+    ORDER BY t.advisor_name
 ) WHERE ROWNUM <= 20
 """
 
@@ -59,17 +59,15 @@ SELECT * FROM (
         SUBSTR(sql_text, 1, 80)               AS sql_text,
         status,
         username,
-        TO_CHAR(last_active_time,'HH24:MI:SS') AS last_active,
+        TO_CHAR(last_refresh_time,'HH24:MI:SS') AS last_active,
         ROUND(elapsed_time/1e6, 1)             AS elapsed_secs,
         ROUND(cpu_time/1e6, 1)                 AS cpu_secs,
         buffer_gets,
         disk_reads,
-        rows_processed,
         sid,
-        inst_id,
         sql_plan_hash_value
     FROM v$sql_monitor
-    WHERE last_active_time > SYSDATE - 1/24
+    WHERE last_refresh_time > SYSDATE - 1/24
     ORDER BY elapsed_time DESC NULLS LAST
 ) WHERE ROWNUM <= 20
 """
@@ -78,22 +76,20 @@ _SQL_SQL_PLAN_MONITOR = """
 SELECT
     sql_id,
     plan_line_id,
-    operation,
-    object_name,
-    cardinality,
+    plan_operation          AS operation,
+    plan_object_name        AS object_name,
+    plan_cardinality        AS cardinality,
     output_rows,
     starts,
-    actual_rows,
-    elapsed_time/1e6       AS elapsed_secs,
-    cpu_time/1e6           AS cpu_secs,
-    physical_read_requests AS disk_reads,
+    output_rows             AS actual_rows,
+    physical_read_requests  AS disk_reads,
     physical_write_requests AS disk_writes,
     status
 FROM v$sql_plan_monitor
 WHERE sql_id = (
     SELECT sql_id FROM (
         SELECT sql_id FROM v$sql_monitor
-        WHERE last_active_time > SYSDATE - 1/24
+        WHERE last_refresh_time > SYSDATE - 1/24
         ORDER BY elapsed_time DESC NULLS LAST
     ) WHERE ROWNUM = 1
 )

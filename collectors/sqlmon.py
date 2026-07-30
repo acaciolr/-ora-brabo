@@ -15,7 +15,7 @@ SELECT * FROM (
         ROUND(m.cpu_time/1000000,2)       AS cpu_sec,
         m.buffer_gets, m.disk_reads,
         ROUND(m.physical_write_bytes/1048576,2) AS phys_write_mb,
-        m.fetches, m.executions,
+        m.fetches,
         m.px_servers_requested, m.px_servers_allocated,
         ROUND(m.io_interconnect_bytes/1048576,2) AS interconnect_mb,
         m.sql_text

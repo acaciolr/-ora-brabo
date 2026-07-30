@@ -51,14 +51,16 @@ class SQLCollector(BaseCollector):
         rows = await self.conn.execute_query(_SQL_TOP)
         self.cache.set("sql.top", rows, ttl=self.interval + 2)
 
-        # Scalar aggregates for graph ring-buffers
-        if rows:
-            total_cpu     = sum(float(r.get("cpu_sec", 0) or 0)      for r in rows)
-            total_elapsed = sum(float(r.get("elapsed_sec", 0) or 0)   for r in rows)
-            total_buf_k   = sum(int(r.get("buffer_gets", 0) or 0)     for r in rows) / 1000.0
-            self.cache.set("sql.total_cpu_sec",     total_cpu,     ttl=self.interval + 2)
-            self.cache.set("sql.total_elapsed_sec", total_elapsed,  ttl=self.interval + 2)
-            self.cache.set("sql.total_buffer_gets", total_buf_k,    ttl=self.interval + 2)
+        # Scalar aggregates for graph ring-buffers — always written (0 when
+        # there is no user SQL) so the graph line stays continuous instead of
+        # freezing/blanking on an idle database.
+        rows = rows or []
+        total_cpu     = sum(float(r.get("cpu_sec", 0) or 0)     for r in rows)
+        total_elapsed = sum(float(r.get("elapsed_sec", 0) or 0) for r in rows)
+        total_buf_k   = sum(int(r.get("buffer_gets", 0) or 0)   for r in rows) / 1000.0
+        self.cache.set("sql.total_cpu_sec",     total_cpu,     ttl=self.interval + 2)
+        self.cache.set("sql.total_elapsed_sec", total_elapsed, ttl=self.interval + 2)
+        self.cache.set("sql.total_buffer_gets", total_buf_k,   ttl=self.interval + 2)
 
     async def fetch_full_text(self, sql_id: str) -> str:
         row = await self.conn.fetch_one(_SQL_TEXT_FULL, {"sql_id": sql_id})

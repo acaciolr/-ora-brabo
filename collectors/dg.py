@@ -53,9 +53,8 @@ SELECT
     dest_id,
     dest_name,
     status,
-    target,
-    archiver,
-    schedule,
+    database_mode,
+    recovery_mode,
     destination,
     applied_seq#    AS applied_seq,
     error

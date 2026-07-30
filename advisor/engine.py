@@ -284,7 +284,7 @@ class AdvisorEngine:
                 severity   = Severity.CRITICAL if pct >= 95 else Severity.WARNING,
                 category   = "FRA",
                 title      = f"FRA usage at {pct:.1f}%",
-                detail     = f"Used: {fra.get('fra_used_gb', 0):.1f} GB / {fra.get('fra_total_gb', 0):.1f} GB",
+                detail     = f"Used: {(fra.get('used_mb', 0) or 0)/1024:.1f} GB / {(fra.get('total_mb', 0) or 0)/1024:.1f} GB",
                 suggestion = "Delete obsolete backups or increase DB_RECOVERY_FILE_DEST_SIZE.",
             ))
         return findings

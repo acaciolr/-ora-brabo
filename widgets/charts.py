@@ -91,22 +91,46 @@ class Graph(Static):
 
             plt.plot(x, y, marker="braille", label=self.label, color=self.color)
 
-            # Y-axis ticks
-            max_y = max(y) if y else 1.0
-            max_y = max_y if max_y > 0 else 1.0
+            # Y-axis scaling: fit the data range (min..max) instead of forcing
+            # a zero baseline, so small-amplitude series (e.g. Active Sessions
+            # 2..3) fill the panel and are readable.
+            y_min = min(y)
+            y_max = max(y)
+            if y_max == y_min:
+                # Flat line — build a small band around the value.
+                pad = abs(y_max) * 0.1 or 1.0
+                y_min, y_max = y_min - pad, y_max + pad
+            else:
+                # Small headroom so the peak isn't glued to the top edge.
+                pad = (y_max - y_min) * 0.05
+                y_min, y_max = y_min - pad, y_max + pad
+            # Don't invent negative values for non-negative metrics.
+            if min(y) >= 0 and y_min < 0:
+                y_min = 0.0
+
+            span = y_max - y_min
             n_ticks = 4
-            y_ticks = [i * max_y / n_ticks for i in range(n_ticks + 1)]
+            y_ticks = [y_min + i * span / n_ticks for i in range(n_ticks + 1)]
+
+            with contextlib.suppress(Exception):
+                plt.ylim(y_min, y_max)
 
             if self.fmt_fn:
                 y_labels = [self.fmt_fn(v) for v in y_ticks]
             else:
-                # Auto-format: use .0f for large values, .2f for small
-                if max_y >= 100:
-                    y_labels = [f"{v:.0f}{self.unit}" for v in y_ticks]
-                elif max_y >= 10:
-                    y_labels = [f"{v:.1f}{self.unit}" for v in y_ticks]
+                # Adaptive precision from the visible span, so ticks stay
+                # distinguishable even when values are tiny (idle redo, etc.).
+                if span >= 100:
+                    dec = 0
+                elif span >= 10:
+                    dec = 1
+                elif span >= 1:
+                    dec = 2
+                elif span >= 0.1:
+                    dec = 3
                 else:
-                    y_labels = [f"{v:.2f}{self.unit}" for v in y_ticks]
+                    dec = 4
+                y_labels = [f"{v:.{dec}f}{self.unit}" for v in y_ticks]
 
             plt.yticks(y_ticks, y_labels)
             plt.xticks([])  # No x-axis labels (time-series rolling window)

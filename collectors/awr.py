@@ -42,7 +42,7 @@ SELECT
     f.task_name,
     f.finding_name,
     f.type,
-    f.impact_absolute,
+    f.impact            AS impact_absolute,
     f.message
 FROM dba_advisor_findings f
 WHERE f.task_name IN (
@@ -52,7 +52,7 @@ WHERE f.task_name IN (
         ORDER BY execution_start DESC
     ) WHERE ROWNUM = 1
 )
-ORDER BY f.impact_absolute DESC
+ORDER BY f.finding_name
 """
 
 _SQL_ASH = """
@@ -103,9 +103,10 @@ _SQL_AWR_TOP_WAITS = """
 SELECT * FROM (
     SELECT
         e.event_name,
-        SUM(e.waits_delta)                         AS total_waits,
-        ROUND(SUM(e.time_waited_delta)/1e6, 1)     AS time_waited_secs,
-        ROUND(SUM(e.time_waited_delta) / NULLIF(SUM(e.waits_delta),0) / 1000, 2) AS avg_wait_ms,
+        (MAX(e.total_waits) - MIN(e.total_waits))                      AS total_waits,
+        ROUND((MAX(e.time_waited_micro) - MIN(e.time_waited_micro))/1e6, 1) AS time_waited_secs,
+        ROUND((MAX(e.time_waited_micro) - MIN(e.time_waited_micro))
+              / NULLIF(MAX(e.total_waits) - MIN(e.total_waits),0) / 1000, 2) AS avg_wait_ms,
         MAX(e.wait_class)                          AS wait_class
     FROM dba_hist_system_event e
     JOIN dba_hist_snapshot sn ON sn.snap_id = e.snap_id AND sn.dbid = e.dbid
@@ -120,7 +121,7 @@ _SQL_AWR_SYSSTAT = """
 SELECT * FROM (
     SELECT
         s.stat_name,
-        SUM(s.value_delta) AS total_delta
+        (MAX(s.value) - MIN(s.value)) AS total_delta
     FROM dba_hist_sysstat s
     JOIN dba_hist_snapshot sn ON sn.snap_id = s.snap_id AND sn.dbid = s.dbid
     WHERE sn.end_interval_time >= SYSDATE - 1/24

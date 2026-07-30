@@ -975,7 +975,7 @@ class LocksPanel(BasePanel):
 
     # Locks mudam devagar e o operador precisa de tempo pra ler o bloqueio.
     # Sem esse override herdava o padrão de 1s, que piscava rápido demais.
-    REFRESH_RATE = 5
+    REFRESH_RATE = 2
 
     def compose(self) -> ComposeResult:
         yield Static(id="locks-summary")
@@ -1420,7 +1420,7 @@ class RACPanel(BasePanel):
 # ---------------------------------------------------------------------------
 
 class DataGuardPanel(BasePanel):
-    REFRESH_RATE = 5
+    REFRESH_RATE = 2
 
     def compose(self) -> ComposeResult:
         yield Static(id="dg-overview")
@@ -1601,7 +1601,7 @@ class DataGuardPanel(BasePanel):
 # ---------------------------------------------------------------------------
 
 class ASMPanel(BasePanel):
-    REFRESH_RATE = 5
+    REFRESH_RATE = 2
 
     def compose(self) -> ComposeResult:
         yield Static(id="asm-capacity")
@@ -1615,7 +1615,7 @@ class ASMPanel(BasePanel):
         fra        = self.cache.get("asm.fra",           {}) or {}
         fra_files  = self.cache.get("asm.fra_files",     []) or []
         arch_rate  = self.cache.get("asm.archive_rate_mb", 0) or 0
-        large_segs = self.cache.get("asm.large_segments", []) or []
+        large_segs = self.cache.get("obj.biggest_segments", []) or []
 
         # ── Capacity overview ──────────────────────────────────────────
         cap_t = Table.grid(padding=(0, 2), expand=True)
@@ -1785,9 +1785,9 @@ class ASMPanel(BasePanel):
         lt.add_column("Relative",   width=20)
 
         if large_segs:
-            max_mb = max((float(s.get("mb", 0) or 0) for s in large_segs), default=1) or 1
+            max_mb = max((float(s.get("size_mb", s.get("mb", 0)) or 0) for s in large_segs), default=1) or 1
             for seg in large_segs:
-                mb  = float(seg.get("mb", 0) or 0)
+                mb  = float(seg.get("size_mb", seg.get("mb", 0)) or 0)
                 rel = mb / max_mb * 100
                 size_str = f"{mb / 1024:.1f} GB" if mb >= 1024 else f"{mb:,.0f} MB"
                 lt.add_row(
@@ -1811,7 +1811,7 @@ class ASMPanel(BasePanel):
 # ---------------------------------------------------------------------------
 
 class RMANPanel(BasePanel):
-    REFRESH_RATE = 5
+    REFRESH_RATE = 2
 
     def compose(self) -> ComposeResult:
         yield Static(id="rman-monitor")
@@ -2057,7 +2057,7 @@ class RMANPanel(BasePanel):
 # ---------------------------------------------------------------------------
 
 class AWRPanel(BasePanel):
-    REFRESH_RATE = 5
+    REFRESH_RATE = 2
 
     def compose(self) -> ComposeResult:
         yield Static(id="awr-ts")
@@ -2370,7 +2370,7 @@ class ASHPanel(BasePanel):
 # ---------------------------------------------------------------------------
 
 class AdvisorPanel(BasePanel):
-    REFRESH_RATE = 5
+    REFRESH_RATE = 2
 
     BINDINGS = [
         Binding("enter", "show_sql_detail", "SQL Plan", show=True),
@@ -2622,7 +2622,7 @@ class AdvisorPanel(BasePanel):
 
 class ExadataPanel(BasePanel):
     """Exadata monitoring panel — no rack diagram, pure metrics tables."""
-    REFRESH_RATE = 10
+    REFRESH_RATE = 3
 
     def compose(self) -> ComposeResult:
         yield Static(id="exa-overview")
@@ -3024,7 +3024,7 @@ class PDBPanel(BasePanel):
 
 class IOActivityPanel(BasePanel):
     """I/O by datafile, by function, load profile, redo logs, undo stats."""
-    REFRESH_RATE = 5
+    REFRESH_RATE = 2
 
     DEFAULT_CSS = BasePanel.DEFAULT_CSS
 
@@ -3262,7 +3262,7 @@ class IOActivityPanel(BasePanel):
 
 class MemoryAdvisorPanel(BasePanel):
     """SGA/PGA advisory, buffer pool, resize ops, latches, mutex."""
-    REFRESH_RATE = 10
+    REFRESH_RATE = 3
 
     DEFAULT_CSS = BasePanel.DEFAULT_CSS
 
@@ -3466,7 +3466,7 @@ class MemoryAdvisorPanel(BasePanel):
 
 class SegmentsPanel(BasePanel):
     """Top segments, stale stats, scheduler jobs, plan baselines."""
-    REFRESH_RATE = 10
+    REFRESH_RATE = 3
 
     DEFAULT_CSS = BasePanel.DEFAULT_CSS
 
@@ -3753,7 +3753,7 @@ class SQLMonitorPanel(BasePanel):
 
 class AlertLogPanel(BasePanel):
     """Alert log entries and incident summary."""
-    REFRESH_RATE = 10
+    REFRESH_RATE = 3
 
     DEFAULT_CSS = BasePanel.DEFAULT_CSS
 
@@ -3838,7 +3838,7 @@ class AlertLogPanel(BasePanel):
 
 class WaitChainPanel(BasePanel):
     """Visual wait chain tree from V$WAIT_CHAINS."""
-    REFRESH_RATE = 5
+    REFRESH_RATE = 2
 
     DEFAULT_CSS = BasePanel.DEFAULT_CSS
 
@@ -3985,7 +3985,7 @@ class PlanBaselinesPanel(BasePanel):
 
 class ParallelQueryPanel(BasePanel):
     """Parallel query sessions from GV$PX_SESSION."""
-    REFRESH_RATE = 5
+    REFRESH_RATE = 2
 
     DEFAULT_CSS = BasePanel.DEFAULT_CSS
 
@@ -4056,7 +4056,7 @@ class ParallelQueryPanel(BasePanel):
 # ---------------------------------------------------------------------------
 
 class ReportPanel(BasePanel):
-    REFRESH_RATE = 5
+    REFRESH_RATE = 2
 
     def compose(self) -> ComposeResult:
         yield Static(id="report-status")

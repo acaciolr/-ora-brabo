@@ -53,11 +53,11 @@ class Scheduler:
         self.collectors = [
             HealthCollector(conn_manager, cache, interval=refresh_interval),
             SessionsCollector(conn_manager, cache, interval=refresh_interval),
-            SQLCollector(conn_manager, cache, interval=refresh_interval * 2),
+            SQLCollector(conn_manager, cache, interval=refresh_interval),
             WaitsCollector(conn_manager, cache, interval=refresh_interval),
             RACCollector(conn_manager, cache, interval=refresh_interval),
             DataGuardCollector(conn_manager, cache, interval=refresh_interval * 2),
-            ASMCollector(conn_manager, cache, interval=refresh_interval * 3),
+            ASMCollector(conn_manager, cache, interval=refresh_interval * 2),
             RMANCollector(conn_manager, cache, interval=refresh_interval * 2),
             AWRCollector(conn_manager, cache, interval=60),
             ExadataCollector(conn_manager, cache, interval=30),

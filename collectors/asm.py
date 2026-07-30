@@ -10,26 +10,27 @@ from collectors.base import BaseCollector
 
 _SQL_DISKGROUPS = """
 SELECT
-    group_number,
-    name,
-    state,
-    type,
-    ROUND(total_mb / 1024, 2)   AS total_gb,
-    ROUND(free_mb / 1024, 2)    AS free_gb,
-    ROUND((total_mb - free_mb) / 1024, 2) AS used_gb,
-    ROUND((total_mb - free_mb) / NULLIF(total_mb, 0) * 100, 1) AS used_pct,
-    offline_disks,
-    rebalance,
-    allocation_unit_size / 1048576 AS au_mb
-FROM v$asm_diskgroup
-ORDER BY name
+    g.group_number,
+    g.name,
+    g.state,
+    g.type,
+    g.total_mb,
+    g.free_mb,
+    g.usable_file_mb,
+    ROUND((g.total_mb - g.free_mb) / NULLIF(g.total_mb, 0) * 100, 1) AS used_pct,
+    g.offline_disks,
+    (SELECT COUNT(*) FROM v$asm_disk d
+      WHERE d.group_number = g.group_number)  AS num_disks,
+    g.allocation_unit_size / 1048576          AS au_mb
+FROM v$asm_diskgroup g
+ORDER BY g.name
 """
 
 _SQL_FRA = """
 SELECT
-    space_limit / 1073741824            AS fra_total_gb,
-    space_used / 1073741824             AS fra_used_gb,
-    space_reclaimable / 1073741824      AS fra_reclaimable_gb,
+    space_limit / 1048576               AS total_mb,
+    space_used / 1048576                AS used_mb,
+    space_reclaimable / 1048576         AS reclaimable_mb,
     ROUND(space_used / NULLIF(space_limit,0) * 100, 2) AS used_pct,
     number_of_files
 FROM v$recovery_file_dest
@@ -47,7 +48,7 @@ ORDER BY percent_space_used DESC
 
 _SQL_ARCHIVE_RATE = """
 SELECT
-    ROUND(SUM(blocks * block_size) / COUNT(*) / 1048576, 2) AS avg_archive_mb
+    ROUND(SUM(blocks * block_size) / 1048576 / 3600, 2) AS avg_archive_mb
 FROM v$archived_log
 WHERE completion_time >= SYSDATE - 1/24
   AND standby_dest = 'NO'
@@ -56,14 +57,14 @@ WHERE completion_time >= SYSDATE - 1/24
 _SQL_DISKS = """
 SELECT
     d.group_number,
-    g.name                                                       AS diskgroup_name,
+    NVL(g.name, '[CANDIDATE]')                                   AS diskgroup_name,
     d.disk_number,
     d.name                                                       AS disk_name,
     d.path,
     d.mode_status,
     d.state,
     d.header_status,
-    ROUND(d.total_mb)                                            AS total_mb,
+    ROUND(NVL(NULLIF(d.total_mb, 0), d.os_mb))                   AS total_mb,
     ROUND(d.free_mb)                                             AS free_mb,
     ROUND((d.total_mb - d.free_mb) / NULLIF(d.total_mb, 0) * 100, 1) AS used_pct,
     d.reads,
@@ -73,9 +74,8 @@ SELECT
     d.failgroup,
     d.label
 FROM v$asm_disk d
-JOIN v$asm_diskgroup g ON d.group_number = g.group_number
-WHERE d.group_number > 0
-ORDER BY g.name, d.disk_number
+LEFT JOIN v$asm_diskgroup g ON d.group_number = g.group_number
+ORDER BY diskgroup_name, d.disk_number
 """
 
 

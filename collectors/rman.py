@@ -150,16 +150,16 @@ SELECT * FROM (
         rs.row_type,
         rs.operation,
         rs.status,
-        rs.input_type,
+        rs.object_type                              AS input_type,
         rs.start_time,
         rs.end_time,
-        rs.elapsed_seconds,
-        rs.input_bytes / 1048576         AS input_mb,
-        rs.output_bytes / 1048576        AS output_mb,
-        rs.input_bytes_per_sec / 1048576 AS throughput_mb_s,
-        rs.output_bytes_display,
-        rs.time_taken_display,
-        rs.compression_ratio
+        ROUND((rs.end_time - rs.start_time) * 86400) AS elapsed_seconds,
+        rs.input_bytes / 1048576                    AS input_mb,
+        rs.output_bytes / 1048576                   AS output_mb,
+        ROUND(rs.output_bytes / 1048576
+              / NULLIF((rs.end_time - rs.start_time) * 86400, 0), 2) AS throughput_mb_s,
+        rs.mbytes_processed,
+        rs.output_device_type
     FROM v$rman_status rs
     WHERE rs.row_type IN ('RMAN STATUS', 'BACKUP')
       AND rs.start_time >= SYSDATE - 7
@@ -175,15 +175,14 @@ SELECT * FROM (
         bs.set_stamp,
         bs.backup_type,
         bs.controlfile_included,
-        bs.status,
         bs.device_type,
         bs.start_time,
         bs.completion_time,
         bs.elapsed_seconds,
-        bs.bytes / 1048576 AS size_mb,
-        bs.compressed,
-        bs.tag
-    FROM v$backup_set bs
+        bs.output_bytes / 1048576   AS size_mb,
+        bs.compression_ratio,
+        bs.pieces
+    FROM v$backup_set_details bs
     WHERE bs.start_time >= SYSDATE - 7
     ORDER BY bs.start_time DESC
 )

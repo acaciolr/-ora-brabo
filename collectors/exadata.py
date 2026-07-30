@@ -24,8 +24,7 @@ log = logging.getLogger(__name__)
 
 _SQL_DETECT = """
 SELECT COUNT(*) AS cnt
-FROM v$sysstat
-WHERE name = 'cell physical IO bytes eligible for predicate offload'
+FROM v$cell_config
 """
 
 # ── Cell servers ──────────────────────────────────────────────────────────────

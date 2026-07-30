@@ -52,10 +52,21 @@ class MetricsCache:
     # Read
     # ------------------------------------------------------------------
 
-    def get(self, key: str, default: Any = None) -> Any:
+    def get(self, key: str, default: Any = None, allow_stale: bool = True) -> Any:
+        """Return the cached value.
+
+        By default this is *stale-tolerant*: once a key has been populated it
+        keeps returning the last known value even after its TTL elapses. This
+        prevents panels from blanking/flickering between collector cycles (the
+        collection can take longer than the TTL window). Freshness can still be
+        checked explicitly via is_fresh(). Pass allow_stale=False to get the
+        old behavior (default when expired).
+        """
         with self._lock:
             entry = self._data.get(key)
-            if entry is None or entry.is_expired:
+            if entry is None:
+                return default
+            if entry.is_expired and not allow_stale:
                 return default
             return entry.value
 
@@ -70,6 +81,14 @@ class MetricsCache:
         with self._lock:
             entry = self._data.get(key)
             return entry is not None and not entry.is_expired
+
+    def age(self, key: str) -> float | None:
+        """Seconds since the key was last written, or None if never set."""
+        with self._lock:
+            entry = self._data.get(key)
+            if entry is None:
+                return None
+            return time.monotonic() - entry.timestamp
 
     def keys(self) -> list[str]:
         with self._lock:

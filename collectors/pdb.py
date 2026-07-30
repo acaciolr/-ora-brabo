@@ -36,7 +36,7 @@ ORDER BY p.con_id
 
 _SQL_PDB_DG = """
 SELECT p.con_id, p.name AS pdb_name, p.open_mode, p.restricted,
-    p.recovery_status, p.logging, p.application_root,
+    p.recovery_status,
     s.protection_mode, s.database_role,
     ds.name AS dg_stat_name, ds.value AS dg_stat_value, ds.unit
 FROM v$pdbs p

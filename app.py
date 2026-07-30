@@ -3,7 +3,7 @@ ORA BRABO Monitoring Tool
 =========================
 Oracle Database TUI Monitor — inspired by Dolphie, powered by Textual.
 Author : DBA BRABO | Acacio Lima Rocha
-Version: 1.2.1 — faster initial load (cache priming on connect)
+Version: 1.3.0 — all collector queries validated against the DB dictionary (ADB-safe columns)
 """
 
 from __future__ import annotations
@@ -107,7 +107,7 @@ class OraBraboApp(App):
     # ──────────────────────────────────────────────────────────────────
 
     async def on_mount(self) -> None:
-        log.info("ORA BRABO v1.2.1 starting (multi-tab, thick mode, cache priming).")
+        log.info("ORA BRABO v1.3.0 starting (multi-tab, thick mode, cache priming).")
         self.set_interval(1.0, self._tick_refresh)
 
         if self._initial_config:
@@ -296,6 +296,32 @@ class OraBraboApp(App):
                     tab.label = label  # type: ignore[assignment]
             except Exception:
                 pass
+
+        # Header sub-title: freshness indicator for the ACTIVE session so the
+        # user knows when collection has stalled (cache is stale-tolerant, so
+        # panels keep showing the last values — this flags that they're old).
+        self._update_freshness_subtitle()
+
+    def _update_freshness_subtitle(self) -> None:
+        if not self._active_id or self._active_id not in self._sessions:
+            return
+        sess = self._sessions[self._active_id]
+        pane = self._active_pane()
+        # Freshness of the data shown on the *current* panel — recomputed on
+        # every tick, so the counter tracks the active panel live.
+        key = pane.active_primary_key() if pane else "health.total_sessions"
+        try:
+            cache = sess.cache
+            if cache.is_fresh(key):
+                self.sub_title = sess.label
+            else:
+                age = cache.age(key)
+                if age is None:
+                    self.sub_title = f"{sess.label} — aguardando coleta…"
+                else:
+                    self.sub_title = f"{sess.label} — ⚠ dados defasados há {age:.0f}s"
+        except Exception:
+            pass
 
     def _active_pane(self) -> ConnectionPane | None:
         if not self._active_id:

@@ -17,6 +17,10 @@ env/
 ora_brabo_backup_*.zip
 *.zip
 
+# Documentação de referência pesada (consultada localmente, não versionar)
+database-reference.pdf
+*.pdf
+
 # Runtime / config local
 /tmp/ora_brabo.log
 *.log

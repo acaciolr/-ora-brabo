@@ -19,12 +19,12 @@ SELECT * FROM (
 """
 
 _SQL_INCIDENTS = """
-SELECT p.problem_id, p.problem_key, p.last_incident_id,
+SELECT p.problem_id, p.problem_key, p.last_incident,
     COUNT(i.incident_id) AS incident_count,
     MAX(i.create_time)   AS last_time
 FROM v$diag_problem p
 JOIN v$diag_incident i ON p.problem_id = i.problem_id
-GROUP BY p.problem_id, p.problem_key, p.last_incident_id
+GROUP BY p.problem_id, p.problem_key, p.last_incident
 ORDER BY MAX(i.create_time) DESC
 """
 
