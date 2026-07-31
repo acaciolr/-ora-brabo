@@ -3656,20 +3656,51 @@ class SQLMonitorPanel(BasePanel):
     DEFAULT_CSS = BasePanel.DEFAULT_CSS
 
     _rows: list[dict] = []
+    _last_plan_sql_id: str = ""
+    _focused_once: bool = False
 
     BINDINGS = [
         Binding("enter", "show_sql_text", "Full SQL", show=True),
     ]
 
+    # Estimated execution plan for the highlighted sql_id (V$SQL_PLAN).
+    _SQL_PLAN = """
+        SELECT
+            p.id              AS plan_line_id,
+            p.depth,
+            p.operation
+                || CASE WHEN p.options IS NOT NULL THEN ' ' || p.options ELSE '' END
+                               AS operation,
+            p.object_name,
+            p.cardinality,
+            p.cost,
+            p.bytes
+        FROM v$sql_plan p
+        WHERE p.sql_id      = :sql_id
+          AND p.child_number = (
+              SELECT MIN(child_number) FROM v$sql_plan WHERE sql_id = :sql_id
+          )
+        ORDER BY p.id
+    """
+
     def compose(self) -> ComposeResult:
         yield Static(id="sqlmon-header")
         yield DataTable(id="sqlmon-table")
         yield Static(id="sqlmon-sql-preview")
+        yield Static(id="sqlmon-plan")
 
     def on_data_table_row_highlighted(self, event: DataTable.RowHighlighted) -> None:
+        self._select_row(event.cursor_row)
+
+    def _select_row(self, idx: int | None) -> None:
+        """Update the SQL-text preview and the inline execution plan for a row.
+
+        Called both on cursor navigation and from refresh_data(), so the plan
+        for the currently-highlighted row is shown even without the user moving
+        the cursor.
+        """
         rows = self._rows
-        idx  = event.cursor_row
-        if not rows or idx < 0 or idx >= len(rows):
+        if not rows or idx is None or idx < 0 or idx >= len(rows):
             return
         r       = rows[idx]
         sql_txt = str(r.get("sql_text", "") or "")
@@ -3682,6 +3713,82 @@ class SQLMonitorPanel(BasePanel):
             Panel(prev, title="[bold #bbc8e8]SQL Text Preview[/]",
                   border_style="#384c7a", padding=(0, 1))
         )
+
+        # Execution plan below — fetched once per distinct sql_id. An exclusive
+        # worker means fast cursor movement cancels the previous in-flight fetch
+        # instead of piling up DB queries.
+        if not sql_id:
+            self._last_plan_sql_id = ""
+            self.query_one("#sqlmon-plan", Static).update("")
+            return
+        if sql_id == self._last_plan_sql_id:
+            return
+        self._last_plan_sql_id = sql_id
+        self.query_one("#sqlmon-plan", Static).update(
+            Panel(Text(f"  Buscando plano de execução de {sql_id}…", style="dim"),
+                  title="[bold #bbc8e8]Execution Plan[/]",
+                  border_style="#384c7a", padding=(0, 1))
+        )
+        self.run_worker(
+            self._load_plan(sql_id, sql_txt),
+            name=f"sqlmon-plan-{sql_id}",
+            group="sqlmon-plan",
+            exclusive=True,
+        )
+
+    async def _load_plan(self, sql_id: str, sql_txt: str = "") -> None:
+        """Fetch and render the execution plan for the highlighted sql_id."""
+        try:
+            plan = await self.conn.execute_query(self._SQL_PLAN, {"sql_id": sql_id})
+        except Exception as exc:  # demo mode / transient — degrade gracefully
+            log.debug("SQL Monitor plan fetch failed for %s: %s", sql_id, exc)
+            plan = []
+        # A newer selection may have superseded this fetch while it was running.
+        if sql_id != self._last_plan_sql_id:
+            return
+        self.query_one("#sqlmon-plan", Static).update(
+            self._render_plan(sql_id, plan, sql_txt)
+        )
+
+    def _render_plan(self, sql_id: str, plan: list[dict], sql_txt: str = "") -> Panel:
+        if not plan:
+            head = sql_txt.strip().lower()
+            if head.startswith("begin") or head.startswith("declare"):
+                msg = ("  Bloco PL/SQL (begin…/declare…) não tem plano em v$sql_plan.\n"
+                       "  O plano existe para o SQL SELECT/DML executado DENTRO do bloco,\n"
+                       "  sob outro sql_id. Selecione uma linha de SELECT/DML.")
+            else:
+                msg = "  (plano não encontrado — o SQL pode não estar mais no shared pool)"
+            return Panel(Text(msg, style="dim"),
+                         title=f"[bold #bbc8e8]Execution Plan — {sql_id}[/]",
+                         border_style="#384c7a", padding=(0, 1))
+        t = Table(box=rich_box.SIMPLE_HEAD, expand=True, border_style="#384c7a")
+        t.add_column("Id", justify="right", style="dim", no_wrap=True)
+        t.add_column("Operation", style="#e6edf3")
+        t.add_column("Object", style="cyan")
+        t.add_column("Rows", justify="right")
+        t.add_column("Cost", justify="right")
+        t.add_column("Bytes", justify="right")
+        for r in plan:
+            pid    = r.get("plan_line_id", 0)
+            depth  = int(r.get("depth", 0) or 0)
+            indent = "  " * min(depth, 12)
+            op     = str(r.get("operation", "") or "")
+            obj    = str(r.get("object_name", "") or "")
+            card   = int(r.get("cardinality", 0) or 0)
+            cost   = int(r.get("cost", 0) or 0)
+            byt    = int(r.get("bytes", 0) or 0)
+            cost_c = "red" if cost > 100000 else ("yellow" if cost > 10000 else "white")
+            t.add_row(
+                str(pid),
+                f"{indent}{op}",
+                obj or "—",
+                f"{card:,}" if card else "—",
+                Text(f"{cost:,}", style=cost_c) if cost else Text("—", style="dim"),
+                f"{byt:,}" if byt else "—",
+            )
+        return Panel(t, title=f"[bold #bbc8e8]Execution Plan — {sql_id}[/]",
+                     border_style="#384c7a", padding=(0, 1))
 
     async def refresh_data(self) -> None:
         active = self.cache.get("sqlmon.active", []) or []
@@ -3697,7 +3804,7 @@ class SQLMonitorPanel(BasePanel):
         h.add_row(
             f"[dim]Total monitored:[/] [bold]{total_count}[/]",
             f"[dim]Executing:[/] [bold green]{exec_count}[/]",
-            Text.from_markup("[dim]Enter=Full SQL text[/]"),
+            Text.from_markup("[dim]↑↓ = plano abaixo · Enter = SQL completo[/]"),
         )
         self.query_one("#sqlmon-header", Static).update(
             Panel(h, title="[bold white]Real-Time SQL Monitor (GV$SQL_MONITOR)[/]",
@@ -3740,6 +3847,19 @@ class SQLMonitorPanel(BasePanel):
             )
         if dt.row_count and cursor > 0:
             dt.move_cursor(row=min(cursor, dt.row_count - 1))
+
+        # Focus the table once so ↑↓ navigation works as soon as the panel
+        # opens, and auto-show the plan for the currently-highlighted row so it
+        # appears without the user having to move the cursor first.
+        if dt.row_count:
+            if not self._focused_once:
+                try:
+                    dt.focus()
+                except Exception:
+                    pass
+                self._focused_once = True
+            cur = dt.cursor_row if (dt.cursor_row is not None and dt.cursor_row >= 0) else 0
+            self._select_row(cur)
 
     def action_show_sql_text(self) -> None:
         rows = self._rows

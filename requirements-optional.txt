@@ -1,3 +1,18 @@
-# Optional dependencies — not required to run ORA BRABO.
-# PDF report export (F-Report panel). Needs Pillow (C build) on some systems.
+# Dependências OPCIONAIS — o ORA BRABO roda 100% sem elas.
+# Só habilitam o export de PDF do painel F-Report (via reportlab, que usa Pillow).
+#
+# IMPORTANTE — instale SEMPRE com wheel pré-compilado, nunca do fonte:
+#
+#     pip install --prefer-binary -r requirements-optional.txt
+#
+# O --prefer-binary abaixo força o pip a baixar o binário (manylinux) da Pillow
+# em vez de compilar em C. Isso evita o erro de build "'for' loop initial
+# declarations are only allowed in C99 mode" que aparece em servidores com gcc
+# antigo / Python do Anaconda (o gcc do compiler_compat assume C89 por padrão).
+# Se o pip for antigo e não achar o wheel, atualize-o primeiro: pip install -U pip
+--prefer-binary
+
 reportlab>=4.0.0
+# Pin explícito: estas versões têm wheel manylinux para CPython 3.8–3.12,
+# então nenhuma etapa de compilação (gcc) é necessária.
+pillow>=10.4.0
