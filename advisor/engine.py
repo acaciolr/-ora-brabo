@@ -58,7 +58,21 @@ class AdvisorEngine:
         while self._running:
             try:
                 findings = await self._evaluate()
-                self.cache.set("advisor.findings", findings, ttl=self.interval + 5)
+                # The panel consumes plain dicts (uses .get()), so serialize the
+                # Finding dataclasses with severity as a plain string.
+                findings_dicts = [
+                    {
+                        "severity":   f.severity.value,
+                        "category":   f.category,
+                        "title":      f.title,
+                        "detail":     f.detail,
+                        "suggestion": f.suggestion,
+                        "impact":     f.impact,
+                        "sql_id":     f.sql_id,
+                    }
+                    for f in findings
+                ]
+                self.cache.set("advisor.findings", findings_dicts, ttl=self.interval + 5)
             except Exception as exc:
                 log.warning("Advisor error: %s", exc)
             await asyncio.sleep(self.interval)

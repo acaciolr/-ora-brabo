@@ -9,7 +9,8 @@ from collectors.base import BaseCollector
 
 _SQL_ALERT_LOG = """
 SELECT * FROM (
-    SELECT originating_timestamp, message_text, message_level,
+    SELECT CAST(originating_timestamp AS TIMESTAMP) AS originating_timestamp,
+        message_text, message_level,
         component_id, host_id, instance_id
     FROM v$diag_alert_ext
     WHERE message_text LIKE 'ORA-%'

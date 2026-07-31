@@ -209,6 +209,10 @@ class ConnectionManager:
         if self._sync_pool:
             await asyncio.to_thread(self._sync_pool.close, force=True)
             log.info("Connection pool closed (thick).")
+        # Clear the handles so acquire() raises the friendly "not connected"
+        # error (instead of using a closed pool) if a reconnect fails midway.
+        self._pool = None
+        self._sync_pool = None
 
     # ------------------------------------------------------------------
     # Pool access

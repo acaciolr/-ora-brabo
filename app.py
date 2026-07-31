@@ -3,7 +3,7 @@ ORA BRABO Monitoring Tool
 =========================
 Oracle Database TUI Monitor — inspired by Dolphie, powered by Textual.
 Author : DBA BRABO | Acacio Lima Rocha
-Version: 1.3.0 — all collector queries validated against the DB dictionary (ADB-safe columns)
+Version: 1.3.3 — Advisor findings render fix + thin-mode timestamp/CLOB fixes (scheduler, alertlog)
 """
 
 from __future__ import annotations
@@ -107,7 +107,7 @@ class OraBraboApp(App):
     # ──────────────────────────────────────────────────────────────────
 
     async def on_mount(self) -> None:
-        log.info("ORA BRABO v1.3.0 starting (multi-tab, thick mode, cache priming).")
+        log.info("ORA BRABO v1.3.3 starting (multi-tab, thick mode, cache priming).")
         self.set_interval(1.0, self._tick_refresh)
 
         if self._initial_config:

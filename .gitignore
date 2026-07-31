@@ -25,6 +25,13 @@ database-reference.pdf
 /tmp/ora_brabo.log
 *.log
 .ora_brabo/
+.claude/
+
+# Dados de ambiente de cliente (IPs internos, bash_history) — nunca versionar
+/unknow_dba/
+
+# dolphie-main é só referência de design/arquitetura, não faz parte do build
+dolphie-main/.github/workflows/
 
 # ─── iCloud / editores ────────────────────────────────────
 # Cópias de conflito do iCloud ("arquivo 2.py")

@@ -3,4 +3,8 @@ textual>=0.52.0
 rich>=13.7.0
 plotext>=5.0.0
 keyring>=24.0.0
-reportlab>=4.0.0
+
+# Optional — PDF report export (F-Report). Pulls in Pillow, which needs a C
+# toolchain to build on older systems. The app runs fine without it; only the
+# PDF report feature is disabled. Install with:
+#   pip install -r requirements-optional.txt

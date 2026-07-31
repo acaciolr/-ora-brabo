@@ -123,21 +123,8 @@ SELECT * FROM (
 
 # ── Cell wait events (system-level) ──────────────────────────────────────────
 
-_SQL_CELL_WAITS = """
-SELECT
-    event,
-    total_waits,
-    ROUND(time_waited / 100, 2)            AS time_waited_secs,
-    ROUND(average_wait / 100, 2)           AS avg_wait_ms,
-    wait_class
-FROM gv$system_event
-WHERE event LIKE 'cell%'
-  AND total_waits > 0
-ORDER BY time_waited DESC
-FETCH FIRST 20 ROWS ONLY
-"""
-
-# Oracle 11g-safe version (no FETCH FIRST)
+# ROWNUM-limited (11g-safe); do not reintroduce FETCH FIRST here — this
+# collector must run on Exadata 11g as well.
 _SQL_CELL_WAITS_11G = """
 SELECT * FROM (
     SELECT

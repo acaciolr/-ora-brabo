@@ -625,6 +625,21 @@ class TopSQLPanel(BasePanel):
         sql_top = self.cache.get("sql.top", []) or []
         self._sql_top = sql_top
 
+        # Trend graphs from a panel-local rolling history of totals computed
+        # directly from sql_top — guaranteed present whenever the table has
+        # data (does not depend on the collector's cache history keys).
+        from collections import deque
+        if not hasattr(self, "_g_cpu"):
+            self._g_cpu = deque(maxlen=120)
+            self._g_ela = deque(maxlen=120)
+            self._g_buf = deque(maxlen=120)
+        self._g_cpu.append(sum(float(r.get("cpu_secs") or r.get("cpu_sec") or 0) for r in sql_top))
+        self._g_ela.append(sum(float(r.get("elapsed_secs") or r.get("elapsed_sec") or 0) for r in sql_top))
+        self._g_buf.append(sum(int(r.get("buffer_gets", 0) or 0) for r in sql_top) / 1000.0)
+        self.query_one("#graph-sql-cpu", Graph).update_data(list(self._g_cpu))
+        self.query_one("#graph-sql-ela", Graph).update_data(list(self._g_ela))
+        self.query_one("#graph-sql-buf", Graph).update_data(list(self._g_buf))
+
         total_cpu  = sum(float(r.get("cpu_secs") or r.get("cpu_sec") or 0) for r in sql_top) or 1
         total_ela  = sum(float(r.get("elapsed_secs") or r.get("elapsed_sec") or 0) for r in sql_top)
         total_exec = sum(int(r.get("executions", 0) or 0) for r in sql_top)
@@ -729,13 +744,7 @@ class TopSQLPanel(BasePanel):
                       border_style="#384c7a", padding=(0, 1))
             )
 
-        # ── Trend graphs ──────────────────────────────────────────────
-        self.query_one("#graph-sql-cpu", Graph).update_data(
-            [float(v) for v in self.cache.get_history_values("sql.total_cpu_sec")])
-        self.query_one("#graph-sql-ela", Graph).update_data(
-            [float(v) for v in self.cache.get_history_values("sql.total_elapsed_sec")])
-        self.query_one("#graph-sql-buf", Graph).update_data(
-            [float(v) for v in self.cache.get_history_values("sql.total_buffer_gets")])
+        # (trend graphs already updated at the top of refresh_data)
 
     _SQL_PLAN = """
         SELECT

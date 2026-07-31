@@ -1,0 +1,3 @@
+# Optional dependencies — not required to run ORA BRABO.
+# PDF report export (F-Report panel). Needs Pillow (C build) on some systems.
+reportlab>=4.0.0

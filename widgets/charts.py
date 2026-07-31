@@ -73,9 +73,14 @@ class Graph(Static):
     # ── Internal render ────────────────────────────────────────────────────
 
     def _draw(self) -> None:
+        # Make the empty state visible instead of a blank box — this also tells
+        # us whether the metric history is empty vs a sizing/render issue.
+        if not self._values:
+            self.update(Text(f"  {self.label}\n  (sem dados ainda…)", style="dim"))
+            return
         w = self.size.width
         h = self.size.height
-        if not self._values or w < 8 or h < 4:
+        if w < 8 or h < 4:
             return
 
         try:
