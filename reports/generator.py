@@ -16,6 +16,7 @@ from pathlib import Path
 from xml.sax.saxutils import escape as _xml_escape
 
 from reportlab.graphics.charts.lineplots import LinePlot
+from reportlab.graphics.charts.barcharts import HorizontalBarChart
 from reportlab.graphics.shapes import Drawing, String
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4
@@ -23,8 +24,8 @@ from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
 from reportlab.lib.units import cm
 from reportlab.pdfgen import canvas as pdfcanvas
 from reportlab.platypus import (
-    BaseDocTemplate, Frame, PageBreak, PageTemplate, Paragraph,
-    SimpleDocTemplate, Spacer, Table, TableStyle,
+    BaseDocTemplate, Frame, KeepTogether, PageBreak, PageTemplate, Paragraph,
+    Preformatted, SimpleDocTemplate, Spacer, Table, TableStyle,
 )
 from reportlab.platypus.tableofcontents import TableOfContents
 
@@ -46,12 +47,19 @@ _SEV_COLORS = {"CRITICAL": _RED, "WARNING": _YELLOW, "INFO": colors.HexColor("#2
 _STYLES = getSampleStyleSheet()
 _H1     = ParagraphStyle("ObH1", parent=_STYLES["Title"], textColor=colors.white, fontSize=19, leading=23)
 _H2     = ParagraphStyle("ObH2", parent=_STYLES["Heading2"], textColor=_ACCENT_DARK, spaceBefore=16, spaceAfter=6,
-                          borderColor=_ACCENT, borderWidth=0, leading=16)
-_H3     = ParagraphStyle("ObH3", parent=_STYLES["Heading3"], textColor=_ACCENT, spaceBefore=8, spaceAfter=4)
+                          borderColor=_ACCENT, borderWidth=0, leading=16, keepWithNext=1)
+_H3     = ParagraphStyle("ObH3", parent=_STYLES["Heading3"], textColor=_ACCENT, spaceBefore=8, spaceAfter=4,
+                          keepWithNext=1)
 _NORMAL = _STYLES["BodyText"]
 _SMALL  = ParagraphStyle("ObSmall", parent=_STYLES["BodyText"], fontSize=8, textColor=colors.grey)
 _NOTE   = ParagraphStyle("ObNote", parent=_STYLES["BodyText"], fontSize=7, textColor=colors.grey)
 _CELL   = ParagraphStyle("ObCell", parent=_STYLES["BodyText"], fontSize=7, leading=9)
+_MONO   = ParagraphStyle("ObMono", parent=_STYLES["Code"], fontName="Courier", fontSize=6.5,
+                          leading=8.2, textColor=colors.HexColor("#1a1a1a"),
+                          backColor=_GREY_BG, borderColor=_GREY_LINE, borderWidth=0.5,
+                          borderPadding=5, spaceBefore=2, spaceAfter=2)
+_SQLTXT = ParagraphStyle("ObSqlTxt", parent=_STYLES["Code"], fontName="Courier", fontSize=6.5,
+                          leading=8, textColor=colors.HexColor("#33475b"))
 _TOC1   = ParagraphStyle("ObTOC1", parent=_STYLES["Normal"], fontName="Helvetica-Bold", fontSize=10.5,
                           leading=16, spaceBefore=4, textColor=colors.HexColor("#1a1a1a"))
 
@@ -158,6 +166,71 @@ def _line_chart(values: list, title: str, color=_ACCENT, width: int = 220, heigh
     except Exception:
         log.warning("Chart render failed for %r", title, exc_info=True)
         return None
+
+
+def _bar_chart(labels: list, values: list, title: str, color=_ACCENT,
+               width: int = 460, height: int | None = None):
+    """Horizontal bar chart from a current-snapshot list (labels + numeric values)."""
+    vals = [float(v or 0) for v in values]
+    labs = [str(l) for l in labels]
+    if not vals or max(vals) <= 0:
+        return None
+    n = len(vals)
+    height = height or (30 + n * 16)
+    try:
+        d = Drawing(width, height)
+        bc = HorizontalBarChart()
+        bc.x = 120
+        bc.y = 10
+        bc.width = width - 140
+        bc.height = height - 26
+        bc.data = [vals]
+        bc.bars[0].fillColor = color
+        bc.valueAxis.valueMin = 0
+        bc.valueAxis.valueMax = max(vals) * 1.12
+        bc.valueAxis.labels.fontSize = 6
+        bc.categoryAxis.categoryNames = labs
+        bc.categoryAxis.labels.fontSize = 6
+        bc.categoryAxis.labels.boxAnchor = "e"
+        bc.categoryAxis.labels.dx = -3
+        bc.barWidth = 8
+        d.add(bc)
+        d.add(String(width / 2, height - 8, title, textAnchor="middle",
+                     fontSize=8, fillColor=colors.black))
+        return d
+    except Exception:
+        log.warning("Bar chart render failed for %r", title, exc_info=True)
+        return None
+
+
+def _fmt_compact(v) -> str:
+    try:
+        n = float(v or 0)
+    except Exception:
+        n = 0
+    if n >= 1_000_000:
+        return f"{n / 1_000_000:.1f}M"
+    if n >= 1_000:
+        return f"{n / 1_000:.1f}K"
+    return str(int(n)) if n else "-"
+
+
+def _plan_block(plan: list, limit: int = 16) -> Preformatted:
+    """Execution plan rendered as an aligned, DBMS_XPLAN-style monospace block."""
+    OPW = 40
+    header = f"{'Id':>3}  {'Operation':<{OPW}}  {'Name':<16}  {'Rows':>7}  {'Cost':>7}"
+    lines = [header, "-" * len(header)]
+    for ln in plan[:limit]:
+        pid = int(_num(ln, "plan_line_id"))
+        op = ("  " * min(int(_num(ln, "depth")), 10)) + _txt(ln, "operation")
+        op = (op[:OPW - 1] + "…") if len(op) > OPW else op
+        name = _txt(ln, "object_name")[:16]
+        rows = _fmt_compact(_num(ln, "cardinality"))
+        cost = _fmt_compact(_num(ln, "cost"))
+        lines.append(f"{pid:>3}  {op:<{OPW}}  {name:<16}  {rows:>7}  {cost:>7}")
+    if len(plan) > limit:
+        lines.append(f"... (+{len(plan) - limit} linhas)")
+    return Preformatted("\n".join(lines), _MONO)
 
 
 def _kpi_card(label: str, value: str, color_hex: str = "#1f6fb2") -> Table:
@@ -356,18 +429,31 @@ def _build_health(cache: MetricsCache) -> list:
 
     cpu_hist   = cache.get_history_values("health.cpu_load") or []
     sess_hist  = cache.get_history_values("health.active_sessions") or []
+    sga_hist   = cache.get_history_values("health.sga_mb") or []
+    pga_hist   = cache.get_history_values("health.pga_mb") or []
     rates_hist = cache.get_history_values("health.rates") or []
-    redo_hist  = [r.get("redo_mb_per_sec") for r in rates_hist if isinstance(r, dict) and isinstance(r.get("redo_mb_per_sec"), (int, float))]
-    lread_hist = [r.get("logical_reads_per_sec") for r in rates_hist if isinstance(r, dict) and isinstance(r.get("logical_reads_per_sec"), (int, float))]
+
+    def _rate_hist(name):
+        return [r.get(name) for r in rates_hist
+                if isinstance(r, dict) and isinstance(r.get(name), (int, float))]
+
+    redo_hist  = _rate_hist("redo_mb_per_sec")
+    lread_hist = _rate_hist("logical_reads_per_sec")
+    exec_hist  = _rate_hist("executes_per_sec")
+    hp_hist    = _rate_hist("hard_parses_per_sec")
 
     charts = []
-    for values, title in (
-        (cpu_hist, "CPU Load — trend"),
-        (sess_hist, "Active Sessions — trend"),
-        (redo_hist, "Redo MB/s — trend"),
-        (lread_hist, "Logical Reads/s — trend"),
+    for values, title, col in (
+        (cpu_hist,   "CPU Load — trend",          _ACCENT),
+        (sess_hist,  "Active Sessions — trend",   _ACCENT),
+        (redo_hist,  "Redo MB/s — trend",         _ACCENT),
+        (lread_hist, "Logical Reads/s — trend",   _ACCENT),
+        (sga_hist,   "SGA (MB) — trend",          colors.HexColor("#2e7d32")),
+        (pga_hist,   "PGA (MB) — trend",          colors.HexColor("#2e7d32")),
+        (exec_hist,  "Executes/s — trend",        colors.HexColor("#8e44ad")),
+        (hp_hist,    "Hard Parses/s — trend",     colors.HexColor("#c0392b")),
     ):
-        d = _line_chart(values, title)
+        d = _line_chart(values, title, color=col)
         if d:
             charts.append(d)
 
@@ -427,6 +513,22 @@ def _build_waits(cache: MetricsCache) -> list:
         story.append(_styled_table(
             ["Event", "Class", "Waits", "Time (s)", "Avg (ms)"], rows,
             col_widths=[5 * cm, 3 * cm, 2.3 * cm, 2.5 * cm, 2.5 * cm]))
+        # Prefer time-waited; if the instance reports ~0 (delta-based / idle),
+        # fall back to wait counts so the chart is never empty. Idle-class
+        # events (e.g. SQL*Net message from client) are excluded so the real
+        # foreground waits stand out.
+        fg = [w for w in top if _txt(w, "wait_class").lower() != "idle"][:8]
+        labels8 = [_txt(w, "event")[:28] for w in fg]
+        times8  = [_num(w, "time_waited_sec") for w in fg]
+        if max(times8, default=0) > 0:
+            chart = _bar_chart(labels8, times8, "Top Wait Events — time waited (s)",
+                               color=colors.HexColor("#c0392b"))
+        else:
+            chart = _bar_chart(labels8, [_num(w, "total_waits") for w in fg],
+                               "Top Wait Events — total waits (excl. idle)", color=colors.HexColor("#c0392b"))
+        if chart:
+            story.append(Spacer(1, 6))
+            story.append(chart)
     else:
         story.append(Paragraph("No wait event data available.", _NORMAL))
 
@@ -466,6 +568,14 @@ def _build_sql(cache: MetricsCache) -> list:
         story.append(_styled_table(
             ["SQL ID", "Exec", "CPU (s)", "Elapsed (s)", "Buffer Gets", "Schema"], rows,
             col_widths=[2.8 * cm, 1.8 * cm, 2.2 * cm, 2.5 * cm, 3 * cm, 2.7 * cm]))
+        top_cpu = sorted(top, key=lambda r: _pick_num(r, "cpu_sec", "cpu_secs"), reverse=True)[:8]
+        chart = _bar_chart(
+            [_txt(r, "sql_id") for r in top_cpu],
+            [_pick_num(r, "cpu_sec", "cpu_secs") for r in top_cpu],
+            "Top SQL — CPU seconds", color=colors.HexColor("#8e44ad"))
+        if chart:
+            story.append(Spacer(1, 6))
+            story.append(chart)
     else:
         story.append(Paragraph("No SQL activity data available.", _NORMAL))
 
@@ -481,6 +591,35 @@ def _build_sql(cache: MetricsCache) -> list:
         story.append(_styled_table(
             ["SQL ID", "Elapsed (s)", "CPU (s)", "Exec", "Buffer Gets", "SQL Text"], rows2,
             col_widths=[2.5 * cm, 2 * cm, 2 * cm, 1.8 * cm, 2.5 * cm, 4.2 * cm]))
+
+    # Top 5 costliest SQL with full execution plans (pre-fetched by the panel).
+    plans = cache.get("report.top_sql_plans", []) or []
+    if plans:
+        story.append(Spacer(1, 12))
+        story.append(Paragraph("Top 5 SQL — Execution Plans", _H2))
+        for i, p in enumerate(plans, start=1):
+            hdr = (f"{i}. SQL {_txt(p, 'sql_id')}  ·  {_txt(p, 'schema') or 'n/a'}")
+            metrics = (f"CPU {_num(p, 'cpu_sec'):,.2f}s   ·   Elapsed {_num(p, 'elapsed_sec'):,.2f}s   ·   "
+                       f"Exec {_num(p, 'executions'):,}   ·   Buffer Gets {_num(p, 'buffer_gets'):,}")
+            group = [
+                Paragraph(_xml_escape(hdr), _H3),
+                Paragraph(f'<font color="#6b7280">{_xml_escape(metrics)}</font>', _CELL),
+            ]
+            sqltxt = _txt(p, "sql_text")
+            if sqltxt:
+                one_line = " ".join(sqltxt.split())
+                group.append(Spacer(1, 2))
+                group.append(Paragraph(_xml_escape(one_line[:600]), _SQLTXT))
+            plan = p.get("plan") or []
+            if plan:
+                group.append(Spacer(1, 3))
+                group.append(_plan_block(plan))
+            else:
+                group.append(Paragraph(
+                    "(plano não disponível — SQL fora do shared pool ou bloco PL/SQL)", _NOTE))
+            # Keep each SQL block (title + metrics + text + plan) on one page.
+            story.append(KeepTogether(group))
+            story.append(Spacer(1, 8))
     return story
 
 
@@ -502,7 +641,18 @@ def _build_tablespaces(cache: MetricsCache) -> list:
         cmds.append(("TEXTCOLOR", (5, i), (5, i), _pct_color(pct)))
         cmds.append(("FONTNAME", (5, i), (5, i), "Helvetica-Bold"))
     table.setStyle(TableStyle(cmds))
-    return [table]
+    story = [table]
+
+    # Bar chart — the fullest tablespaces first (top 12 by used %)
+    ts_sorted = sorted(ts, key=lambda t: float(_pick_num(t, "used_pct", "pct_used")), reverse=True)[:12]
+    chart = _bar_chart(
+        [_txt(t, "tablespace_name")[:22] for t in ts_sorted],
+        [_pick_num(t, "used_pct", "pct_used") for t in ts_sorted],
+        "Tablespace usage (%)", color=colors.HexColor("#1f6fb2"))
+    if chart:
+        story.append(Spacer(1, 8))
+        story.append(chart)
+    return story
 
 
 def _build_segments(cache: MetricsCache) -> list:
@@ -561,16 +711,31 @@ def _build_asm(cache: MetricsCache) -> list:
         ["Diskgroup", "State", "Type", "Total (GB)", "Free (GB)", "Used %"], rows,
         col_widths=[3.5 * cm, 2 * cm, 2 * cm, 2.5 * cm, 2.5 * cm, 2 * cm])]
 
+    # Bar chart — diskgroup usage %, plus FRA as an extra bar when present.
+    bar_labels = [_txt(d, "name")[:20] for d in dgs[:15]]
+    bar_values = [_dg_capacity_gb(d)[2] for d in dgs[:15]]
+
     fra = cache.get("asm.fra", {}) or {}
+    fra_line = None
     if fra:
-        story.append(Spacer(1, 8))
         # tolerate both GB (real collector) and MB (demo data) field naming
         if "fra_total_gb" in fra:
             total, used = _num(fra, "fra_total_gb"), _num(fra, "fra_used_gb")
         else:
             total, used = _num(fra, "total_mb") / 1024, _num(fra, "used_mb") / 1024
         pct = _num(fra, "used_pct")
-        story.append(Paragraph(f"FRA usage: {used:,.1f}/{total:,.1f} GB ({pct:,.1f}%)", _NORMAL))
+        fra_line = f"FRA usage: {used:,.1f}/{total:,.1f} GB ({pct:,.1f}%)"
+        bar_labels.append("FRA")
+        bar_values.append(pct)
+
+    chart = _bar_chart(bar_labels, bar_values, "ASM diskgroup / FRA usage (%)",
+                       color=colors.HexColor("#1f6fb2"))
+    if chart:
+        story.append(Spacer(1, 8))
+        story.append(chart)
+    if fra_line:
+        story.append(Spacer(1, 4))
+        story.append(Paragraph(fra_line, _NORMAL))
     return story
 
 
@@ -718,6 +883,13 @@ def _build_exadata(cache: MetricsCache) -> list:
         ] for w in cell_waits[:10]]
         story.append(_styled_table(["Event", "Waits", "Time (s)", "Avg (ms)"], rows3,
                                     col_widths=[6 * cm, 2.5 * cm, 2.5 * cm, 2.5 * cm]))
+        chart = _bar_chart(
+            [_txt(w, "event")[:28] for w in cell_waits[:8]],
+            [_num(w, "time_waited_secs") for w in cell_waits[:8]],
+            "Cell wait events — time waited (s)", color=colors.HexColor("#e67e22"))
+        if chart:
+            story.append(Spacer(1, 6))
+            story.append(chart)
         story.append(Spacer(1, 8))
 
     offload_sql = cache.get("exa.sql_offload", []) or []

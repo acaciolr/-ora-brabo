@@ -4187,9 +4187,55 @@ class ParallelQueryPanel(BasePanel):
 class ReportPanel(BasePanel):
     REFRESH_RATE = 2
 
+    _SQL_PLAN = """
+        SELECT p.id AS plan_line_id, p.depth,
+               p.operation
+                   || CASE WHEN p.options IS NOT NULL THEN ' ' || p.options ELSE '' END AS operation,
+               p.object_name, p.cardinality, p.cost, p.bytes
+        FROM v$sql_plan p
+        WHERE p.sql_id = :sql_id
+          AND p.child_number = (SELECT MIN(child_number) FROM v$sql_plan WHERE sql_id = :sql_id)
+        ORDER BY p.id
+    """
+    _SQL_FULLTEXT = "SELECT sql_fulltext FROM v$sqlarea WHERE sql_id = :sql_id AND ROWNUM = 1"
+
     def compose(self) -> ComposeResult:
         yield Static(id="report-status")
         yield Static(id="report-history")
+
+    async def _prefetch_top_sql_plans(self, n: int = 5) -> None:
+        """Fetch execution plans for the N costliest SQL (by CPU) into the cache,
+        so the PDF generator (which has no DB connection) can render them."""
+        top = self.cache.get("sql.top", []) or []
+        _cpu = lambda r: float(r.get("cpu_sec") or r.get("cpu_secs") or 0)
+        top_n = sorted(top, key=_cpu, reverse=True)[:n]
+        out: list[dict] = []
+        for r in top_n:
+            sid = str(r.get("sql_id") or "")
+            if not sid:
+                continue
+            try:
+                plan = await self.conn.execute_query(self._SQL_PLAN, {"sql_id": sid})
+            except Exception:
+                plan = []
+            txt = str(r.get("sql_text") or r.get("sql_text_short") or "")
+            if not txt:
+                try:
+                    trow = await self.conn.fetch_one(self._SQL_FULLTEXT, {"sql_id": sid})
+                    txt = str((trow or {}).get("sql_fulltext") or "")
+                except Exception:
+                    txt = ""
+            out.append({
+                "sql_id":      sid,
+                "sql_text":    txt,
+                "schema":      r.get("parsing_schema_name") or r.get("schema_name") or "",
+                "cpu_sec":     r.get("cpu_sec") or r.get("cpu_secs") or 0,
+                "elapsed_sec": r.get("elapsed_sec") or r.get("elapsed_secs") or 0,
+                "executions":  r.get("executions") or 0,
+                "buffer_gets": r.get("buffer_gets") or 0,
+                "plan":        plan,
+            })
+        self.cache.set("report.top_sql_plans", out, ttl=300)
 
     async def refresh_data(self) -> None:
         from reports.generator import REPORTS_DIR
@@ -4230,6 +4276,7 @@ class ReportPanel(BasePanel):
 
         self.app.notify("Generating PDF report…", timeout=5)
         try:
+            await self._prefetch_top_sql_plans()
             path = await asyncio.to_thread(generate_report, self.cache, REPORTS_DIR)
             self.app.notify(f"Report saved: {path}", severity="information", timeout=10)
             await self.refresh_data()

@@ -10,9 +10,10 @@ from textual.app import ComposeResult
 from textual.binding import Binding
 from textual.containers import Horizontal, Vertical
 from textual.screen import ModalScreen
-from textual.widgets import Button, Input, Label, ListItem, ListView, Switch
+from textual.widgets import Button, Input, Label, ListItem, ListView, Static, Switch
 
 from core.config import AppConfig
+from core.version import __version__
 from core.connections_store import (
     SavedConnection,
     load_connections,
@@ -41,10 +42,11 @@ class AddConnectionModal(ModalScreen[AppConfig | None]):
         width: 88;
         height: auto;
         max-height: 90vh;
+        overflow-y: auto;
     }
 
     #dialog-title {
-        color: #58a6ff;
+        color: #8b949e;
         text-style: bold;
         height: 1;
         padding: 0 1;
@@ -127,13 +129,29 @@ class AddConnectionModal(ModalScreen[AppConfig | None]):
         margin: 0;
     }
 
+    /* compact inline field rows: [label] [input] */
+    .frow { height: 3; align: left middle; }
+    #right-panel .flabel {
+        width: 14; height: 3; content-align: left middle; color: #8b949e;
+    }
+    #right-panel .flabel-sm {
+        width: 13; height: 3; content-align: right middle; color: #8b949e; padding: 0 1 0 0;
+    }
+    #right-panel .fhint {
+        width: 1fr; height: 3; content-align: left middle; color: #484f58;
+    }
+    #section-standard, #section-wallet, #section-thick { height: auto; }
+
     #right-panel Input {
-        margin-bottom: 1;
+        width: 1fr;
+        margin: 0;
         border: solid #30363d;
         background: #0d1117;
         color: #e6edf3;
         height: 3;
     }
+
+    #right-panel Switch { height: 3; }
 
     #right-panel Input:focus {
         border: solid #58a6ff;
@@ -250,7 +268,8 @@ class AddConnectionModal(ModalScreen[AppConfig | None]):
 
     def compose(self) -> ComposeResult:
         with Vertical(id="dialog"):
-            yield Label("  New Oracle Connection", id="dialog-title")
+            yield Static(f"◆ ORA BRABO — New Oracle Connection    ·    v{__version__}",
+                         id="dialog-title")
 
             with Horizontal(id="two-col"):
 
@@ -261,101 +280,64 @@ class AddConnectionModal(ModalScreen[AppConfig | None]):
                     yield Label("(none saved)", id="no-saved")
                     yield Button("Delete", id="btn-delete", variant="error")
 
-                # ── Right: form ──────────────────────────────────────
+                # ── Right: form (compact inline rows) ────────────────
                 with Vertical(id="right-panel"):
 
-                    yield Label("Label  (optional)")
-                    yield Input(
-                        placeholder="PROD / DW / ADB-DEV",
-                        id="inp-label",
-                    )
+                    with Horizontal(classes="frow"):
+                        yield Label("Label", classes="flabel")
+                        yield Input(placeholder="PROD / DW / ADB-DEV", id="inp-label")
 
-                    # Wallet toggle
-                    with Horizontal(id="wallet-toggle-row"):
-                        yield Label("Use Wallet  (ADB / OCI)")
+                    with Horizontal(classes="frow"):
+                        yield Label("Use Wallet", classes="flabel")
                         yield Switch(value=False, id="sw-wallet")
+                        yield Label("(ADB / OCI)", classes="fhint")
 
-                    # Standard TCP section
+                    # Standard TCP
                     with Vertical(id="section-standard"):
-                        yield Label("── Standard TCP ──", classes="section-hdr")
-                        yield Label("Host *")
-                        yield Input(
-                            placeholder="hostname or IP",
-                            id="inp-host",
-                        )
-                        with Horizontal(id="port-refresh-row"):
-                            with Vertical():
-                                yield Label("Port")
-                                yield Input(
-                                    placeholder="1521",
-                                    value="1521",
-                                    id="inp-port",
-                                )
-                            with Vertical():
-                                yield Label("Refresh (sec)")
-                                yield Input(
-                                    placeholder="5",
-                                    value="5",
-                                    id="inp-refresh",
-                                )
+                        with Horizontal(classes="frow"):
+                            yield Label("Host *", classes="flabel")
+                            yield Input(placeholder="hostname or IP", id="inp-host")
+                        with Horizontal(classes="frow"):
+                            yield Label("Port", classes="flabel")
+                            yield Input(placeholder="1521", value="1521", id="inp-port")
+                            yield Label("Refresh (s)", classes="flabel-sm")
+                            yield Input(placeholder="5", value="5", id="inp-refresh")
 
-                    # Wallet section
+                    # Wallet
                     with Vertical(id="section-wallet", classes="hidden"):
-                        yield Label("── Oracle Wallet ──", classes="section-hdr-wallet")
-                        yield Label("Wallet ZIP path *")
-                        yield Input(
-                            placeholder="/path/to/Wallet_mydb.zip",
-                            id="inp-wallet-zip",
-                        )
-                        yield Label("Wallet Password  (blank = usa a senha da conexão)")
-                        yield Input(
-                            placeholder="deixe vazio p/ usar a senha acima",
-                            password=True,
-                            id="inp-wallet-password",
-                        )
-                        yield Label("Refresh (sec)")
-                        yield Input(
-                            placeholder="5",
-                            value="5",
-                            id="inp-refresh-wallet",
-                        )
+                        with Horizontal(classes="frow"):
+                            yield Label("Wallet ZIP *", classes="flabel")
+                            yield Input(placeholder="/path/to/Wallet_mydb.zip", id="inp-wallet-zip")
+                        with Horizontal(classes="frow"):
+                            yield Label("Wallet Pass", classes="flabel")
+                            yield Input(placeholder="(vazio = usa a senha abaixo)",
+                                        password=True, id="inp-wallet-password")
 
-                    # Common fields
-                    yield Label("Service / DSN *")
-                    yield Input(
-                        placeholder="ORCL  or  mydb_high",
-                        id="inp-service",
-                    )
-                    yield Label("Username")
-                    yield Input(
-                        placeholder="system  or  admin",
-                        value="system",
-                        id="inp-user",
-                    )
-                    yield Label("Password *")
-                    yield Input(
-                        placeholder="••••••••",
-                        password=True,
-                        id="inp-password",
-                    )
+                    with Horizontal(classes="frow"):
+                        yield Label("Service *", classes="flabel")
+                        yield Input(placeholder="ORCL  or  mydb_high", id="inp-service")
 
-                    with Horizontal(id="sysdba-save-row"):
-                        yield Label("SYSDBA")
+                    with Horizontal(classes="frow"):
+                        yield Label("Username", classes="flabel")
+                        yield Input(value="system", id="inp-user")
+
+                    with Horizontal(classes="frow"):
+                        yield Label("Password *", classes="flabel")
+                        yield Input(placeholder="••••••••", password=True, id="inp-password")
+
+                    with Horizontal(classes="frow"):
+                        yield Label("SYSDBA", classes="flabel")
                         yield Switch(value=False, id="sw-sysdba")
-
-                    # Thick mode — Oracle 11g / Native Network Encryption
-                    with Horizontal(id="thick-toggle-row"):
-                        yield Label("Thick mode  (11g / Native Encryption)")
+                        yield Label("Thick mode", classes="flabel-sm")
                         yield Switch(value=False, id="sw-thick")
-                    with Vertical(id="section-thick", classes="hidden"):
-                        yield Label("Instant Client dir  (vazio = usa o PATH)")
-                        yield Input(
-                            placeholder="/opt/oracle/instantclient_21_13",
-                            id="inp-thick-libdir",
-                        )
 
-                    with Horizontal(id="save-row"):
-                        yield Label("Save this connection")
+                    with Vertical(id="section-thick", classes="hidden"):
+                        with Horizontal(classes="frow"):
+                            yield Label("Client dir", classes="flabel")
+                            yield Input(placeholder="(vazio = usa o PATH)", id="inp-thick-libdir")
+
+                    with Horizontal(classes="frow"):
+                        yield Label("Save conn.", classes="flabel")
                         yield Switch(value=False, id="sw-save")
 
                     with Horizontal(id="btn-row"):
@@ -437,14 +419,13 @@ class AddConnectionModal(ModalScreen[AppConfig | None]):
             getattr(conn, "oracle_client_lib_dir", None) or ""
         )
 
+        self.query_one("#inp-refresh", Input).value = str(conn.refresh_interval)
         if use_wallet:
             self.query_one("#inp-wallet-zip",      Input).value = conn.wallet_zip or ""
             self.query_one("#inp-wallet-password", Input).value = conn.wallet_password or ""
-            self.query_one("#inp-refresh-wallet",  Input).value = str(conn.refresh_interval)
         else:
             self.query_one("#inp-host",    Input).value = conn.host
             self.query_one("#inp-port",    Input).value = str(conn.port)
-            self.query_one("#inp-refresh", Input).value = str(conn.refresh_interval)
 
     # ─────────────────────────────────────────────────────────────────
     # Wallet toggle
@@ -593,7 +574,7 @@ class AddConnectionModal(ModalScreen[AppConfig | None]):
             self.app.notify(f"File not found: {wallet_zip}", severity="error")
             return None
         try:
-            refresh = int(self.query_one("#inp-refresh-wallet", Input).value or "5")
+            refresh = int(self.query_one("#inp-refresh", Input).value or "5")
         except ValueError:
             refresh = 5
 
@@ -668,5 +649,7 @@ def _persist(config: AppConfig) -> None:
         wallet_password=config.wallet_password,
         sysdba=config.sysdba,
         refresh_interval=config.refresh_interval,
+        thick_mode=config.thick_mode,
+        oracle_client_lib_dir=config.oracle_client_lib_dir,
     )
     save_connection(conn)

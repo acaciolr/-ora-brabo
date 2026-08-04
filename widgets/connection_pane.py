@@ -136,6 +136,11 @@ class ConnectionPane(Widget):
             self.query_one(old_id).add_class("hidden")
             self.query_one(new_id).remove_class("hidden")
             self._active_panel = panel
+            # Refresh this panel's data right away so it fills instantly
+            # instead of waiting for the collector's next interval.
+            sched = getattr(self.session, "scheduler", None)
+            if sched is not None:
+                sched.collect_now(panel)
         except Exception as exc:
             log.warning("Panel switch error [session=%s]: %s", sid, exc)
 

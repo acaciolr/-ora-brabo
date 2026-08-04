@@ -20,6 +20,7 @@ from textual.widgets import ContentSwitcher, Footer, Header, Tab, Tabs
 
 from core.config import AppConfig
 from core.connection_session import ConnectionSession
+from core.version import __version__, BANNER_ART
 from widgets.connection_pane import ConnectionPane
 from widgets.add_connection_modal import AddConnectionModal
 
@@ -68,8 +69,11 @@ class OraBraboApp(App):
         Binding("ctrl+7", "show_panel('planbaselines')", "Plan Baselines", show=True),
         Binding("ctrl+8", "show_panel('parallelquery')", "Parallel Query", show=True),
         Binding("ctrl+9", "show_panel('report')",        "Report",         show=True),
-        # ── Tab management ──────────────────────────────────────────────
-        Binding("ctrl+n", "new_connection", "New Tab",   show=True),
+        # ── Tab / connection management ─────────────────────────────────
+        # Two keys for the same action: some terminals/RDM swallow Ctrl+N,
+        # so Ctrl+O is offered as a fallback to open the connection screen.
+        Binding("ctrl+n", "new_connection", "New Conn.", show=True),
+        Binding("ctrl+o", "new_connection", "New Conn.", show=False),
         Binding("ctrl+w", "close_tab",      "Close Tab", show=True),
         # ── In-panel actions ───────────────────────────────────────────
         Binding("k", "kill_session",  "Kill",       show=False),
@@ -82,7 +86,7 @@ class OraBraboApp(App):
         Binding("q", "quit",  "Quit", show=True),
     ]
 
-    TITLE     = "ORA BRABO Monitoring Tool"
+    TITLE     = f"ORA BRABO Monitoring Tool v{__version__}"
     SUB_TITLE = "Oracle Database TUI Monitor | DBA BRABO"
 
     def __init__(self, initial_config: AppConfig | None = None) -> None:
@@ -107,8 +111,8 @@ class OraBraboApp(App):
     # ──────────────────────────────────────────────────────────────────
 
     async def on_mount(self) -> None:
-        log.info("ORA BRABO v1.3.3 starting (multi-tab, thick mode, cache priming).")
-        self.set_interval(1.0, self._tick_refresh)
+        log.info("ORA BRABO v%s starting (multi-tab, thick mode, cache priming).", __version__)
+        self.set_interval(0.5, self._tick_refresh)
 
         if self._initial_config:
             await self._add_connection_tab(self._initial_config)
@@ -340,6 +344,28 @@ class OraBraboApp(App):
 # Entry point
 # ──────────────────────────────────────────────────────────────────────────────
 
+def _print_version_banner() -> None:
+    """Print a colored ASCII banner with the ORA BRABO version."""
+    import platform
+    from rich.console import Console
+
+    try:
+        odb = __import__("oracledb").__version__
+    except Exception:
+        odb = "?"
+
+    c = Console()
+    c.print(BANNER_ART, style="bold #58a6ff")
+    c.print(f"  ORA BRABO Monitoring Tool   ·   v{__version__}", style="bold #e6edf3")
+    c.print("  Oracle Database TUI Monitor — inspired by Dolphie", style="#8b949e")
+    c.print("  DBA BRABO · Acacio Lima Rocha", style="#8b949e")
+    c.print(
+        f"  Python {platform.python_version()}  ·  oracledb {odb} (thin)",
+        style="#484f58",
+    )
+    c.print("")
+
+
 def main() -> None:
     import argparse
 
@@ -369,7 +395,13 @@ def main() -> None:
                         help="Wallet password for ewallet.p12 (omit for cwallet.sso auto-login)")
     parser.add_argument("--demo",            action="store_true",
                         help="Run in demo mode with simulated Oracle data (no database required)")
+    parser.add_argument("--version", "-v",   action="store_true",
+                        help="Show version banner and exit")
     args = parser.parse_args()
+
+    if args.version:
+        _print_version_banner()
+        sys.exit(0)
 
     # Build initial config only when the essential args are present
     initial_config: AppConfig | None = None
