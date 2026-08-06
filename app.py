@@ -70,9 +70,10 @@ class OraBraboApp(App):
         Binding("ctrl+8", "show_panel('parallelquery')", "Parallel Query", show=True),
         Binding("ctrl+9", "show_panel('report')",        "Report",         show=True),
         # ── Tab / connection management ─────────────────────────────────
-        # Two keys for the same action: some terminals/RDM swallow Ctrl+N,
-        # so Ctrl+O is offered as a fallback to open the connection screen.
-        Binding("ctrl+n", "new_connection", "New Conn.", show=True),
+        # "+" opens the connection screen (new tab). Many terminals/RDM
+        # swallow Ctrl+N/Ctrl+O, but a plain "+" is always delivered.
+        Binding("plus",   "new_connection", "New Conn.", show=True),
+        Binding("ctrl+n", "new_connection", "New Conn.", show=False),
         Binding("ctrl+o", "new_connection", "New Conn.", show=False),
         Binding("ctrl+w", "close_tab",      "Close Tab", show=True),
         # ── In-panel actions ───────────────────────────────────────────
@@ -395,6 +396,11 @@ def main() -> None:
                         help="Wallet password for ewallet.p12 (omit for cwallet.sso auto-login)")
     parser.add_argument("--demo",            action="store_true",
                         help="Run in demo mode with simulated Oracle data (no database required)")
+    parser.add_argument("--thick",           action="store_true",
+                        help="Connect in Thick mode (Oracle Instant Client) — needed for 11g "
+                             "or Native Network Encryption")
+    parser.add_argument("--client-dir",      default=None,
+                        help="Oracle Instant Client directory for --thick (omit to use PATH/default)")
     parser.add_argument("--version", "-v",   action="store_true",
                         help="Show version banner and exit")
     args = parser.parse_args()
@@ -428,6 +434,8 @@ def main() -> None:
             wallet_password=args.wallet_password,
             refresh_interval=args.refresh,
             sysdba=args.sysdba,
+            thick_mode=args.thick,
+            oracle_client_lib_dir=args.client_dir,
         )
     elif args.host and args.service and args.password:
         # Standard TCP connection
@@ -440,6 +448,8 @@ def main() -> None:
             password=args.password,
             refresh_interval=args.refresh,
             sysdba=args.sysdba,
+            thick_mode=args.thick,
+            oracle_client_lib_dir=args.client_dir,
         )
 
     OraBraboApp(initial_config=initial_config).run()
