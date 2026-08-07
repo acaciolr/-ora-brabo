@@ -90,11 +90,21 @@ class OraBraboApp(App):
     TITLE     = f"ORA BRABO Monitoring Tool v{__version__}"
     SUB_TITLE = "Oracle Database TUI Monitor | DBA BRABO"
 
-    def __init__(self, initial_config: AppConfig | None = None) -> None:
+    def __init__(
+        self,
+        initial_configs: list[AppConfig] | None = None,
+        initial_config: AppConfig | None = None,
+    ) -> None:
         super().__init__()
-        self._initial_config = initial_config
+        # Accept a single config (back-compat) or a list (multi-tab startup).
+        if initial_config is not None and not initial_configs:
+            initial_configs = [initial_config]
+        self._initial_configs: list[AppConfig] = initial_configs or []
         self._sessions: dict[str, ConnectionSession] = {}   # session.id → session
         self._active_id: str | None = None
+        # Thin vs Thick is process-wide and irreversible; the first successful
+        # connection locks it and no conflicting mode can be opened afterwards.
+        self._active_mode: str | None = None
 
     # ──────────────────────────────────────────────────────────────────
     # Layout
@@ -115,8 +125,9 @@ class OraBraboApp(App):
         log.info("ORA BRABO v%s starting (multi-tab, thick mode, cache priming).", __version__)
         self.set_interval(0.5, self._tick_refresh)
 
-        if self._initial_config:
-            await self._add_connection_tab(self._initial_config)
+        if self._initial_configs:
+            for cfg in self._initial_configs:
+                await self._add_connection_tab(cfg)
         else:
             # No CLI args → open modal after first render
             self.call_after_refresh(self.action_new_connection)
@@ -222,6 +233,20 @@ class OraBraboApp(App):
 
     async def _add_connection_tab(self, config: AppConfig) -> None:
         """Create session, connect, mount pane, add tab."""
+        # Thin and Thick can't coexist in one process (oracledb.init_oracle_client
+        # is global and irreversible). Block a conflicting mode with a clear
+        # message instead of a cryptic driver error.
+        if not config.demo:
+            wanted = "Thick" if config.thick_mode else "Thin"
+            if self._active_mode and wanted != self._active_mode:
+                self.notify(
+                    f"Não é possível abrir '{config.label or config.service}' em modo "
+                    f"{wanted}: esta sessão já está em {self._active_mode}. Thin e Thick "
+                    f"não se misturam no mesmo processo — abra outra instância do ora-brabo "
+                    f"para o outro modo.",
+                    severity="error", timeout=15)
+                return
+
         session = ConnectionSession(config)
         self.notify(f"Connecting to {config.service}@{config.host}…")
 
@@ -254,6 +279,10 @@ class OraBraboApp(App):
                 )
             self.notify(f"Connection failed: {msg}", severity="error", timeout=15)
             return
+
+        # Lock the process-wide connection mode on first successful connect.
+        if not config.demo:
+            self._active_mode = "Thick" if config.thick_mode else "Thin"
 
         self._sessions[session.id] = session
 
@@ -377,6 +406,10 @@ def main() -> None:
             "Examples:\n"
             "  ora_brabo --host db01 --service ORCL --user system --password secret\n"
             "  ora_brabo --host db01 --service ORCL --user sys --password secret --sysdba\n"
+            "  ora_brabo --host db01 --service ORCL --user sys --password secret --thick\n"
+            "  ora_brabo --start-saved PROD,DW    # open saved connections as tabs\n"
+            "  ora_brabo --start-saved all        # open every saved connection\n"
+            "  ora_brabo --list-saved             # list saved connection labels\n"
             "  ora_brabo                          # opens connection dialog"
         ),
     )
@@ -401,6 +434,11 @@ def main() -> None:
                              "or Native Network Encryption")
     parser.add_argument("--client-dir",      default=None,
                         help="Oracle Instant Client directory for --thick (omit to use PATH/default)")
+    parser.add_argument("--start-saved",     default=None, metavar="LABELS",
+                        help="Open tabs already connected from saved connections — comma-separated "
+                             "labels (as saved), or 'all'. Ex: --start-saved BANCO1,BANCO2")
+    parser.add_argument("--list-saved",      action="store_true",
+                        help="List saved connection labels and exit")
     parser.add_argument("--version", "-v",   action="store_true",
                         help="Show version banner and exit")
     args = parser.parse_args()
@@ -409,50 +447,64 @@ def main() -> None:
         _print_version_banner()
         sys.exit(0)
 
-    # Build initial config only when the essential args are present
-    initial_config: AppConfig | None = None
+    if args.list_saved:
+        from core.connections_store import load_connections
+        conns = load_connections()
+        if not conns:
+            print("Nenhuma saved connection encontrada (~/.ora_brabo/connections.json).")
+        else:
+            print("Saved connections:")
+            for c in conns:
+                mode = "wallet" if c.wallet_zip else ("thick" if c.thick_mode else "thin")
+                print(f"  {(c.label or c.service):24s} [{mode:6s}] {c.service}")
+        sys.exit(0)
+
+    # Build the list of connections to open on startup
+    initial_configs: list[AppConfig] = []
     wallet_zip = args.wallet_zip
 
     if args.demo:
         # Demo mode — no real DB connection
-        initial_config = AppConfig(
-            label="DEMO — ORCL_PRIMARY",
-            service="DEMO",
-            username="demo",
-            password="demo",
-            demo=True,
-            refresh_interval=args.refresh,
-        )
+        initial_configs = [AppConfig(
+            label="DEMO — ORCL_PRIMARY", service="DEMO", username="demo",
+            password="demo", demo=True, refresh_interval=args.refresh,
+        )]
+    elif args.start_saved:
+        # Open one tab per saved connection referenced by its label.
+        from core.connections_store import load_connections
+        saved = load_connections()
+        if args.start_saved.strip().lower() == "all":
+            chosen, missing = saved, []
+        else:
+            chosen, missing = [], []
+            for w in (s.strip() for s in args.start_saved.split(",") if s.strip()):
+                match = (next((c for c in saved if (c.label or "").lower() == w.lower()), None)
+                         or next((c for c in saved if c.service.lower() == w.lower()), None))
+                (chosen.append(match) if match else missing.append(w))
+        if missing:
+            print(f"Aviso: saved connection(s) não encontrada(s): {', '.join(missing)}")
+        initial_configs = [c.to_app_config() for c in chosen]
+        if not initial_configs:
+            print("Nenhuma saved connection válida em --start-saved — abrindo a tela de conexão.")
     elif wallet_zip and args.service and args.password:
         # Wallet-based connection (ADB / OCI)
-        initial_config = AppConfig(
-            label=args.label,
-            service=args.service,
-            username=args.user,
-            password=args.password,
-            wallet_zip=wallet_zip,
-            wallet_password=args.wallet_password,
-            refresh_interval=args.refresh,
-            sysdba=args.sysdba,
-            thick_mode=args.thick,
+        initial_configs = [AppConfig(
+            label=args.label, service=args.service, username=args.user,
+            password=args.password, wallet_zip=wallet_zip,
+            wallet_password=args.wallet_password, refresh_interval=args.refresh,
+            sysdba=args.sysdba, thick_mode=args.thick,
             oracle_client_lib_dir=args.client_dir,
-        )
+        )]
     elif args.host and args.service and args.password:
         # Standard TCP connection
-        initial_config = AppConfig(
-            label=args.label,
-            host=args.host,
-            port=args.port,
-            service=args.service,
-            username=args.user,
-            password=args.password,
-            refresh_interval=args.refresh,
-            sysdba=args.sysdba,
-            thick_mode=args.thick,
+        initial_configs = [AppConfig(
+            label=args.label, host=args.host, port=args.port, service=args.service,
+            username=args.user, password=args.password, refresh_interval=args.refresh,
+            sysdba=args.sysdba, thick_mode=args.thick,
             oracle_client_lib_dir=args.client_dir,
-        )
+        )]
 
-    OraBraboApp(initial_config=initial_config).run()
+    OraBraboApp(initial_configs=initial_configs or None).run()
 
 
 if __name__ == "__main__":
