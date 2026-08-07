@@ -31,7 +31,7 @@ database-reference.pdf
 /unknow_dba/
 
 # dolphie-main é só referência de design/arquitetura, não faz parte do build
-dolphie-main/.github/workflows/
+dolphie-main/
 
 # ─── iCloud / editores ────────────────────────────────────
 # Cópias de conflito do iCloud ("arquivo 2.py")
