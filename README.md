@@ -131,6 +131,7 @@ Inspirada no [Dolphie](https://github.com/charles-001/dolphie) (MySQL), foi cons
 
 | Versão | Suporte |
 |--------|---------|
+| Oracle 10g | ✅ (Thick mode) |
 | Oracle 11g | ✅ (Thick mode) |
 | Oracle 12c R1/R2 | ✅ |
 | Oracle 18c | ✅ |
@@ -354,8 +355,7 @@ ora_brabo/
 - [x] Report PDF com gráficos e Top 5 SQL com plano de execução
 - [x] Flag `--version` com banner
 - [x] Instalação offline (air-gapped) com wheels embutidos
-- [ ] Exportação de relatórios em HTML / CSV
-- [ ] Modo cliente/servidor (monitorar centenas de bancos)
+- [x] Exportação de relatórios em formato PDF
 
 ---
 
