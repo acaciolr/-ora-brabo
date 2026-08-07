@@ -371,11 +371,10 @@ ora_brabo/
 - [x] SQL Plan Baselines
 - [x] Parallel Query Monitor
 - [x] Exadata (Smart Scan, Offload, HCC, Cell Wait Events)
-- [ ] Tela de login interativa com histórico de conexões
-- [ ] PDB Monitoring (CDB)
-- [ ] Suporte multi-banco simultâneo
-- [ ] Exportação de relatórios (AWR HTML, CSV)
-- [ ] Modo cliente/servidor (monitorar centenas de bancos)
+- [x] Tela de login interativa com histórico de conexões
+- [x] PDB Monitoring (CDB)
+- [x] Suporte multi-banco simultâneo
+- [x] Exportação de relatórios em formato PDF
 
 ---
 
