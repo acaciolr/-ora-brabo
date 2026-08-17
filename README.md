@@ -139,6 +139,7 @@ Inspirada no [Dolphie](https://github.com/charles-001/dolphie) (MySQL), foi cons
 
 | Versão | Suporte |
 |--------|---------|
+| Oracle 10g | ✅ (Thick mode) |
 | Oracle 11g | ✅ (Thick mode) |
 | Oracle 12c R1/R2 | ✅ |
 | Oracle 18c | ✅ |
