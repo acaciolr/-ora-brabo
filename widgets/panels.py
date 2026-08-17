@@ -4316,7 +4316,7 @@ class PlanHistPanel(BasePanel):
     _sel_phv: str = ""
     _focused_once: bool = False
 
-    BINDINGS = [Binding("s", "input_sql", "SQL ID", show=True)]
+    BINDINGS = [Binding("s", "input_sql", "SQL ID", show=False)]
 
     # ── on-demand SQL ─────────────────────────────────────────────────────
     _SQL_PLANS_AWR = """
@@ -4355,9 +4355,11 @@ class PlanHistPanel(BasePanel):
         SELECT id AS plan_line_id, depth,
                operation || CASE WHEN options IS NOT NULL THEN ' ' || options ELSE '' END AS operation,
                object_name, cardinality, cost, bytes
-        FROM v$sql_plan
-        WHERE sql_id = :sql_id AND plan_hash_value = :phv
-        ORDER BY id
+        FROM v$sql_plan p
+        WHERE p.sql_id = :sql_id AND p.plan_hash_value = :phv
+          AND p.child_number = (SELECT MIN(child_number) FROM v$sql_plan
+                                WHERE sql_id = :sql_id AND plan_hash_value = :phv)
+        ORDER BY p.id
     """
     _SQL_PLAN_HIST = """
         SELECT id AS plan_line_id, depth,
@@ -4453,36 +4455,51 @@ class PlanHistPanel(BasePanel):
                 self._focused_once = True
             if cur > 0:
                 dt.move_cursor(row=min(cur, dt.row_count - 1))
+            # Auto-load the plans for the highlighted SQL (does not depend on the
+            # row-highlight event firing).
+            self._select_sql(dt.cursor_row if (dt.cursor_row is not None and dt.cursor_row >= 0) else 0)
 
     # ── interaction ───────────────────────────────────────────────────────
     def on_data_table_row_highlighted(self, event: DataTable.RowHighlighted) -> None:
         cid = getattr(event.control, "id", "")
         idx = event.cursor_row
         if cid == "ph-sql":
-            if not self._sql_rows or idx < 0 or idx >= len(self._sql_rows):
-                return
-            r = self._sql_rows[idx]
-            sql_id = str(r.get("sql_id", "") or "")
-            if not sql_id or sql_id == self._sel_sql_id:
-                return
-            self._sel_sql_id = sql_id
-            self._sel_current_phv = str(r.get("current_phv", "") or "")
-            self._sel_phv = ""
-            self.query_one("#ph-plan", Static).update("")
-            self.query_one("#ph-timeline", Static).update("")
-            self.run_worker(self._load_plans(sql_id), group="ph-plans", exclusive=True)
+            self._select_sql(idx)
         elif cid == "ph-plans":
             if not self._plan_rows or idx < 0 or idx >= len(self._plan_rows):
                 return
-            phv = str(self._plan_rows[idx].get("phv", "") or "")
-            if not phv or phv == self._sel_phv:
-                return
-            self._sel_phv = phv
+            self._show_plan(str(self._plan_rows[idx].get("phv", "") or ""))
+
+    def _show_plan(self, phv: str) -> None:
+        if not phv or phv == self._sel_phv:
+            return
+        self._sel_phv = phv
+        cache = getattr(self, "_plan_cache", {})
+        key = (self._sel_sql_id, phv)
+        if key in cache:
+            # Already pre-fetched → render synchronously (instant, no flicker).
+            self.query_one("#ph-plan", Static).update(self._render_plan(phv, cache[key]))
+            self.run_worker(self._load_timeline(self._sel_sql_id, phv), group="ph-tl", exclusive=True)
+        else:
             self.query_one("#ph-plan", Static).update(
                 Panel(Text(f"  Buscando plano {phv}…", style="dim"),
                       title="[bold #bbc8e8]Execution Plan[/]", border_style="#384c7a", padding=(0, 1)))
             self.run_worker(self._load_plan_detail(self._sel_sql_id, phv),
                             group="ph-detail", exclusive=True)
+
+    def _select_sql(self, idx) -> None:
+        if not self._sql_rows or idx is None or idx < 0 or idx >= len(self._sql_rows):
+            return
+        r = self._sql_rows[idx]
+        sql_id = str(r.get("sql_id", "") or "")
+        if not sql_id or sql_id == self._sel_sql_id:
+            return
+        self._sel_sql_id = sql_id
+        self._sel_current_phv = str(r.get("current_phv", "") or "")
+        self._sel_phv = ""
+        self.query_one("#ph-plan", Static).update("")
+        self.query_one("#ph-timeline", Static).update("")
+        self.run_worker(self._load_plans(sql_id), group="ph-plans", exclusive=True)
 
     def action_input_sql(self) -> None:
         from widgets.sql_input_screen import SQLInputScreen
@@ -4514,14 +4531,61 @@ class PlanHistPanel(BasePanel):
                     (await self.conn.execute_query(self._SQL_ADAPTIVE_PHV, {"sql_id": sql_id}) or [])}
         except Exception:
             adpt = {}
-        # best-effort ASH resource enrichment (io/pga/temp/run)
-        ash = await self._ash_per_plan(sql_id)
         for r in rows:
-            phv = str(r.get("phv"))
-            r["adaptive"] = r.get("adaptive") or adpt.get(phv)
-            r.update(ash.get(phv, {}))
+            r["adaptive"] = r.get("adaptive") or adpt.get(str(r.get("phv")))
         self._plan_rows = rows
         self._fill_plans_table(rows, source)
+        if rows:
+            phvs = [str(r.get("phv")) for r in rows if r.get("phv") is not None]
+            target = next((r for r in rows if str(r.get("phv")) == self._sel_current_phv), rows[0])
+            first_phv = str(target.get("phv"))
+            # Show the current/first plan immediately (single fast fetch)...
+            if first_phv and first_phv != self._sel_phv:
+                self._sel_phv = first_phv
+                self.run_worker(self._load_plan_detail(sql_id, first_phv),
+                                group="ph-detail", exclusive=True)
+            # ...and pre-fetch every other plan of this sql_id in the background
+            # so switching between them afterwards is instantaneous.
+            self.run_worker(self._prefetch_plans(sql_id, phvs, source), group="ph-prefetch", exclusive=True)
+
+    async def _prefetch_plans(self, sql_id: str, phvs: list[str], source: str) -> None:
+        """Fetch every plan tree for a sql_id concurrently into the cache so
+        subsequent plan switches are instant, then run the ASH enrichment."""
+        cache = getattr(self, "_plan_cache", None)
+        if cache is None:
+            cache = self._plan_cache = {}
+
+        async def _one(phv: str) -> None:
+            if (sql_id, phv) in cache:
+                return
+            try:
+                plan = await self.conn.execute_query(self._SQL_PLAN_CUR, {"sql_id": sql_id, "phv": int(phv)})
+            except Exception:
+                plan = []
+            if not plan:
+                try:
+                    plan = await self.conn.execute_query(self._SQL_PLAN_HIST, {"sql_id": sql_id, "phv": int(phv)})
+                except Exception:
+                    plan = []
+            cache[(sql_id, phv)] = plan
+
+        await asyncio.gather(*(_one(p) for p in phvs if p), return_exceptions=True)
+        if sql_id != self._sel_sql_id:
+            return
+        # Heavy ASH resource columns last, so plans are cached before ASH runs.
+        self.run_worker(self._enrich_ash(sql_id, source), group="ph-ash", exclusive=True)
+
+    async def _enrich_ash(self, sql_id: str, source: str) -> None:
+        ash = await self._ash_per_plan(sql_id)
+        if not ash or sql_id != self._sel_sql_id:
+            return
+        for r in self._plan_rows:
+            r.update(ash.get(str(r.get("phv")), {}))
+        dt = self.query_one("#ph-plans", DataTable)
+        cur = dt.cursor_row
+        self._fill_plans_table(self._plan_rows, source)
+        if dt.row_count and cur and cur > 0:
+            dt.move_cursor(row=min(cur, dt.row_count - 1))
 
     async def _ash_per_plan(self, sql_id: str) -> dict:
         agg = (f"SELECT sql_plan_hash_value AS phv, COUNT(DISTINCT sql_exec_id) ash_execs, "
@@ -4580,18 +4644,30 @@ class PlanHistPanel(BasePanel):
 
     # ── level 3: plan tree + ASH timeline ────────────────────────────────
     async def _load_plan_detail(self, sql_id: str, phv: str) -> None:
-        try:
-            plan = await self.conn.execute_query(self._SQL_PLAN_CUR, {"sql_id": sql_id, "phv": int(phv)})
-        except Exception:
-            plan = []
-        if not plan:
+        cache = getattr(self, "_plan_cache", None)
+        if cache is None:
+            cache = self._plan_cache = {}
+        key = (sql_id, phv)
+        if key in cache:
+            plan = cache[key]                       # instant on re-select
+        else:
             try:
-                plan = await self.conn.execute_query(self._SQL_PLAN_HIST, {"sql_id": sql_id, "phv": int(phv)})
+                plan = await self.conn.execute_query(self._SQL_PLAN_CUR, {"sql_id": sql_id, "phv": int(phv)})
             except Exception:
                 plan = []
+            if not plan:
+                try:
+                    plan = await self.conn.execute_query(self._SQL_PLAN_HIST, {"sql_id": sql_id, "phv": int(phv)})
+                except Exception:
+                    plan = []
+            if len(cache) > 60:
+                cache.clear()
+            cache[key] = plan
         if phv != self._sel_phv:
             return
         self.query_one("#ph-plan", Static).update(self._render_plan(phv, plan))
+        # ASH timeline is secondary — separate cancellable worker so it never
+        # holds up the plan tree when switching plans quickly.
         self.run_worker(self._load_timeline(sql_id, phv), group="ph-tl", exclusive=True)
 
     def _render_plan(self, phv: str, plan: list[dict]) -> Panel:
@@ -4780,12 +4856,16 @@ class JobsPanel(BasePanel):
                 self._focused_once = True
             if cur > 0:
                 dt.move_cursor(row=min(cur, dt.row_count - 1))
+            # Drive the run-history from the current row so it fills without
+            # depending on the row-highlight event firing.
+            self._select_job(dt.cursor_row if (dt.cursor_row is not None and dt.cursor_row >= 0) else 0)
 
     def on_data_table_row_highlighted(self, event: DataTable.RowHighlighted) -> None:
-        if getattr(event.control, "id", "") != "jobs-table":
-            return
-        idx = event.cursor_row
-        if not self._job_rows or idx < 0 or idx >= len(self._job_rows):
+        if getattr(event.control, "id", "") == "jobs-table":
+            self._select_job(event.cursor_row)
+
+    def _select_job(self, idx) -> None:
+        if not self._job_rows or idx is None or idx < 0 or idx >= len(self._job_rows):
             return
         j = self._job_rows[idx]
         if str(j.get("type")) != "SCHEDULER":
