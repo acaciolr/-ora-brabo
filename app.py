@@ -69,6 +69,9 @@ class OraBraboApp(App):
         Binding("ctrl+7", "show_panel('planbaselines')", "Plan Baselines", show=True),
         Binding("ctrl+8", "show_panel('parallelquery')", "Parallel Query", show=True),
         Binding("ctrl+9", "show_panel('report')",        "Report",         show=True),
+        Binding("ctrl+0", "show_panel('planhist')",      "Plan Hist",      show=True),
+        Binding("h",      "show_panel('planhist')",      "Plan Hist",      show=False),
+        Binding("j",      "show_panel('jobs')",          "Jobs",           show=True),
         # ── Tab / connection management ─────────────────────────────────
         # "+" opens the connection screen (new tab). Many terminals/RDM
         # swallow Ctrl+N/Ctrl+O, but a plain "+" is always delivered.

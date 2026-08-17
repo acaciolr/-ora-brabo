@@ -34,6 +34,8 @@ from widgets.panels import (
     WaitChainPanel,
     PlanBaselinesPanel,
     ParallelQueryPanel,
+    PlanHistPanel,
+    JobsPanel,
     ReportPanel,
 )
 
@@ -63,6 +65,8 @@ _PANELS: list[tuple[str, type]] = [
     ("waitchains",   WaitChainPanel),
     ("planbaselines",PlanBaselinesPanel),
     ("parallelquery",ParallelQueryPanel),
+    ("planhist",     PlanHistPanel),
+    ("jobs",         JobsPanel),
     ("report",       ReportPanel),
 ]
 
@@ -87,6 +91,8 @@ _PANEL_PRIMARY_KEY: dict[str, str] = {
     "segments":    "obj.biggest_segments",
     "sqlmonitor":  "sqlmon.active",
     "alertlog":    "alertlog.recent",
+    "planhist":    "planhist.unstable",
+    "jobs":        "jobs.list",
 }
 _DEFAULT_PRIMARY_KEY = "health.total_sessions"
 

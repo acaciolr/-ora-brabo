@@ -778,6 +778,72 @@ class DemoRunner:
         c.set("rman.perf_summary",   _RMAN_PERF_SUMMARY, ttl=86400)
         c.set("sql.top",             _TOP_SQL,         ttl=86400)
         c.set("advisor.findings",    _ADVISOR_FINDINGS, ttl=86400)
+        c.set("planhist.unstable", [
+            {"sql_id": "3yru4fqvqpzwm", "schema_name": "APP_USER", "plans": 3, "execs": 18420,
+             "current_phv": "2891011253", "adaptive": "Y",
+             "sql_text": "SELECT C.CUSTOMER_ID, SUM(O.AMOUNT) FROM CUSTOMERS C JOIN ORDERS O ..."},
+            {"sql_id": "8fkg2hzmdq1wx", "schema_name": "APP_USER", "plans": 2, "execs": 284100,
+             "current_phv": "1550293841", "adaptive": "N",
+             "sql_text": "UPDATE ORDERS SET STATUS = :1, UPDATED_AT = SYSDATE WHERE ORDER_ID = :2"},
+            {"sql_id": "g7z1nkpq9r4ty", "schema_name": "BATCH_USR", "plans": 4, "execs": 9230,
+             "current_phv": "774410028", "adaptive": "Y",
+             "sql_text": "SELECT * FROM DBA_HIST_ACTIVE_SESS_HISTORY WHERE SAMPLE_TIME > :1"},
+        ], ttl=86400)
+        c.set("planhist.adaptive", {
+            "optimizer_adaptive_plans": "TRUE",
+            "optimizer_adaptive_statistics": "FALSE",
+            "optimizer_adaptive_reporting_only": "FALSE",
+            "optimizer_features_enable": "19.1.0",
+        }, ttl=86400)
+        c.set("planhist.awr_ok", True, ttl=86400)
+        c.set("jobs.summary", {"total": 7, "scheduler": 5, "dbms_job": 2,
+                               "running": 1, "failed_24h": 2, "disabled": 1}, ttl=86400)
+        c.set("jobs.list", [
+            {"type": "SCHEDULER", "owner": "APP_OWNER", "name": "REFRESH_MV_VENDAS", "state": "SCHEDULED",
+             "enabled": "TRUE", "last_start": "16/08/2026 03:00:12", "run_count": 412, "failures": 0,
+             "next_run": "17/08/2026 03:00:00", "detail": "Refresh MVs de vendas"},
+            {"type": "SCHEDULER", "owner": "APP_OWNER", "name": "EXPURGO_LOGS", "state": "SCHEDULED",
+             "enabled": "TRUE", "last_start": "16/08/2026 02:00:05", "run_count": 365, "failures": 3,
+             "next_run": "17/08/2026 02:00:00", "detail": "Purge de logs > 90d"},
+            {"type": "SCHEDULER", "owner": "DBA_BRABO", "name": "COLETA_ESTATISTICAS", "state": "RUNNING",
+             "enabled": "TRUE", "last_start": "16/08/2026 22:00:00", "run_count": 730, "failures": 0,
+             "next_run": "17/08/2026 22:00:00", "detail": "Gather stats custom"},
+            {"type": "SCHEDULER", "owner": "APP_OWNER", "name": "INTEGRA_ERP", "state": "BROKEN",
+             "enabled": "FALSE", "last_start": "15/08/2026 06:00:00", "run_count": 190, "failures": 12,
+             "next_run": "", "detail": "ORA-12541 no dblink"},
+            {"type": "SCHEDULER", "owner": "DBA_BRABO", "name": "RMAN_BACKUP_INC", "state": "SCHEDULED",
+             "enabled": "TRUE", "last_start": "16/08/2026 23:00:00", "run_count": 365, "failures": 1,
+             "next_run": "17/08/2026 23:00:00", "detail": "Backup incremental"},
+            {"type": "DBMS_JOB", "owner": "LEGADO", "name": "JOB#142", "state": "SCHEDULED",
+             "enabled": "TRUE", "last_start": "16/08/2026 12:00:00", "run_count": None, "failures": 0,
+             "next_run": "17/08/2026 12:00:00", "detail": "BEGIN pkg_legado.rotina; END;"},
+            {"type": "DBMS_JOB", "owner": "LEGADO", "name": "JOB#207", "state": "BROKEN",
+             "enabled": "FALSE", "last_start": "10/08/2026 12:00:00", "run_count": None, "failures": 5,
+             "next_run": "", "detail": "BEGIN pkg_legado.integra; END;"},
+        ], ttl=86400)
+        c.set("jobs.running", [
+            {"owner": "DBA_BRABO", "job_name": "COLETA_ESTATISTICAS", "start_date": "16/08/2026 22:00:00",
+             "elapsed_time": "0 0:12:31", "session_id": 148, "running_instance": 1},
+        ], ttl=86400)
+        c.set("jobs.upcoming", [
+            {"owner": "APP_OWNER", "job_name": "EXPURGO_LOGS", "next_run_date": "17/08/2026 02:00:00",
+             "schedule_type": "CALENDAR", "state": "SCHEDULED"},
+            {"owner": "APP_OWNER", "job_name": "REFRESH_MV_VENDAS", "next_run_date": "17/08/2026 03:00:00",
+             "schedule_type": "CALENDAR", "state": "SCHEDULED"},
+            {"owner": "LEGADO", "job_name": "JOB#142", "next_run_date": "17/08/2026 12:00:00",
+             "schedule_type": "CALENDAR", "state": "SCHEDULED"},
+            {"owner": "DBA_BRABO", "job_name": "COLETA_ESTATISTICAS", "next_run_date": "17/08/2026 22:00:00",
+             "schedule_type": "CALENDAR", "state": "SCHEDULED"},
+            {"owner": "DBA_BRABO", "job_name": "RMAN_BACKUP_INC", "next_run_date": "17/08/2026 23:00:00",
+             "schedule_type": "CALENDAR", "state": "SCHEDULED"},
+        ], ttl=86400)
+        c.set("jobs.daily", [
+            {"day": f"{d:02d}/08", "ok": ok, "failed": fl, "total": ok + fl, "avg_dur_s": dur}
+            for d, ok, fl, dur in [
+                (3, 41, 0, 38), (4, 40, 1, 42), (5, 42, 0, 31), (6, 39, 2, 55), (7, 43, 0, 29),
+                (8, 41, 1, 44), (9, 40, 0, 33), (10, 38, 3, 61), (11, 42, 0, 35), (12, 41, 1, 40),
+                (13, 43, 0, 30), (14, 40, 2, 52), (15, 42, 1, 37), (16, 39, 2, 48)]
+        ], ttl=86400)
         c.set("ash.samples",         self._fake_ash(), ttl=86400)
         c.set("awr.snapshots",       self._fake_snapshots(), ttl=86400)
         # Exadata (simulated)

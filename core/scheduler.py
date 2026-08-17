@@ -27,6 +27,8 @@ from collectors.memory_advisor import MemoryAdvisorCollector
 from collectors.objects import ObjectsCollector
 from collectors.sqlmon import SQLMonitorCollector
 from collectors.alertlog import AlertLogCollector
+from collectors.plan_hist import PlanHistCollector
+from collectors.jobs import JobsCollector
 
 log = logging.getLogger(__name__)
 
@@ -75,12 +77,14 @@ class Scheduler:
             RMANCollector(conn_manager, cache, interval=med),
             IOActivityCollector(conn_manager, cache, interval=med),
             PDBCollector(conn_manager, cache, interval=med),
+            JobsCollector(conn_manager, cache, interval=med),
             ExadataCollector(conn_manager, cache, interval=slow),
             AdvisorCollector(conn_manager, cache, interval=slow),
             MemoryAdvisorCollector(conn_manager, cache, interval=slow),
             AWRCollector(conn_manager, cache, interval=heavy),
             ObjectsCollector(conn_manager, cache, interval=heavy),
             AlertLogCollector(conn_manager, cache, interval=heavy),
+            PlanHistCollector(conn_manager, cache, interval=heavy),
         ]
         self._by_name = {c.__class__.__name__: c for c in self.collectors}
 
@@ -112,6 +116,8 @@ class Scheduler:
         "waitchains":    ["ObjectsCollector"],
         "planbaselines": ["ObjectsCollector"],
         "parallelquery": ["ObjectsCollector"],
+        "planhist":      ["PlanHistCollector"],
+        "jobs":          ["JobsCollector"],
     }
 
     def collect_now(self, panel_key: str) -> None:

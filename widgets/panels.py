@@ -4283,3 +4283,554 @@ class ReportPanel(BasePanel):
         except Exception as exc:
             log.exception("Report generation failed")
             self.app.notify(f"Report generation failed: {exc}", severity="error", timeout=10)
+
+
+# ---------------------------------------------------------------------------
+# PLAN HIST — plan history / instability per sql_id
+# ---------------------------------------------------------------------------
+
+def _numv(obj: dict, name: str, default: float = 0.0) -> float:
+    """Tolerant numeric getter for row dicts (None/str-safe)."""
+    try:
+        v = obj.get(name)
+        return float(v) if v is not None else default
+    except (TypeError, ValueError):
+        return default
+
+
+class PlanHistPanel(BasePanel):
+    """Plan History: which plans a sql_id has had, execs, plan variation and
+    regression, adaptive-plan params, and the execution plan + ASH timeline on
+    selection. Level 1 (unstable SQL) comes from the collector; levels 2/3 are
+    fetched on demand."""
+    REFRESH_RATE = 5
+    DEFAULT_CSS = BasePanel.DEFAULT_CSS
+
+    AWR_DAYS = 7                 # AWR/ASH look-back window
+    REGRESSION_FACTOR = 2.0      # current avg elapsed >= N x best -> regression
+
+    _sql_rows: list[dict] = []
+    _plan_rows: list[dict] = []
+    _sel_sql_id: str = ""
+    _sel_current_phv: str = ""
+    _sel_phv: str = ""
+    _focused_once: bool = False
+
+    BINDINGS = [Binding("s", "input_sql", "SQL ID", show=True)]
+
+    # ── on-demand SQL ─────────────────────────────────────────────────────
+    _SQL_PLANS_AWR = """
+        SELECT s.plan_hash_value AS phv,
+               SUM(s.executions_delta) AS execs,
+               ROUND(SUM(s.elapsed_time_delta)/NULLIF(SUM(s.executions_delta),0)/1e6, 3) AS avg_etime,
+               ROUND(SUM(s.buffer_gets_delta)/NULLIF(SUM(s.executions_delta),0))          AS avg_lio,
+               MIN(sn.begin_interval_time) AS first_seen,
+               MAX(sn.end_interval_time)   AS last_seen
+        FROM dba_hist_sqlstat s
+        JOIN dba_hist_snapshot sn
+          ON sn.snap_id = s.snap_id AND sn.instance_number = s.instance_number AND sn.dbid = s.dbid
+        WHERE s.sql_id = :sql_id
+          AND sn.begin_interval_time >= SYSDATE - :days
+        GROUP BY s.plan_hash_value
+        ORDER BY MAX(sn.end_interval_time) DESC
+    """
+    _SQL_PLANS_CUR = """
+        SELECT plan_hash_value AS phv,
+               SUM(executions) AS execs,
+               ROUND(SUM(elapsed_time)/NULLIF(SUM(executions),0)/1e6, 3) AS avg_etime,
+               ROUND(SUM(buffer_gets)/NULLIF(SUM(executions),0))          AS avg_lio,
+               MIN(TO_DATE(first_load_time,'YYYY-MM-DD/HH24:MI:SS')) AS first_seen,
+               MAX(last_active_time) AS last_seen
+        FROM gv$sql
+        WHERE sql_id = :sql_id AND plan_hash_value > 0
+        GROUP BY plan_hash_value
+        ORDER BY MAX(last_active_time) DESC
+    """
+    _SQL_ADAPTIVE_PHV = """
+        SELECT plan_hash_value AS phv, MAX(is_resolved_adaptive_plan) AS adaptive
+        FROM gv$sql WHERE sql_id = :sql_id AND plan_hash_value > 0
+        GROUP BY plan_hash_value
+    """
+    _SQL_PLAN_CUR = """
+        SELECT id AS plan_line_id, depth,
+               operation || CASE WHEN options IS NOT NULL THEN ' ' || options ELSE '' END AS operation,
+               object_name, cardinality, cost, bytes
+        FROM v$sql_plan
+        WHERE sql_id = :sql_id AND plan_hash_value = :phv
+        ORDER BY id
+    """
+    _SQL_PLAN_HIST = """
+        SELECT id AS plan_line_id, depth,
+               operation || CASE WHEN options IS NOT NULL THEN ' ' || options ELSE '' END AS operation,
+               object_name, cardinality, cost, bytes
+        FROM dba_hist_sql_plan
+        WHERE sql_id = :sql_id AND plan_hash_value = :phv
+        ORDER BY id
+    """
+
+    # ASH per-execution deltas (PGA/TEMP growth per exec), from either the
+    # AWR ASH view (7 days) or the in-memory V$ view (~1h). {view} is filled in.
+    _ASH_INNER = """
+        SELECT sql_plan_hash_value, sql_exec_id, sql_exec_start,
+               MAX(sample_time - sql_exec_start) AS run_time,
+               SUM(delta_read_io_bytes) AS read_io,
+               SUM(delta_pga)  AS pga,
+               SUM(delta_temp) AS temp
+        FROM (
+            SELECT sql_plan_hash_value, sql_exec_id, sample_time, sql_exec_start,
+                   delta_read_io_bytes,
+                   GREATEST(pga_allocated - FIRST_VALUE(pga_allocated)
+                       OVER (PARTITION BY sql_id, sql_exec_id ORDER BY sample_time ROWS 1 PRECEDING), 0) AS delta_pga,
+                   GREATEST(temp_space_allocated - FIRST_VALUE(temp_space_allocated)
+                       OVER (PARTITION BY sql_id, sql_exec_id ORDER BY sample_time ROWS 1 PRECEDING), 0) AS delta_temp
+            FROM {view}
+            WHERE sql_id = :sql_id AND sample_time >= SYSDATE - :days
+              AND sql_exec_start IS NOT NULL AND is_sqlid_current = 'Y'
+        )
+        GROUP BY sql_plan_hash_value, sql_exec_id, sql_exec_start
+    """
+    _RUN_SECS = ("EXTRACT(DAY FROM run_time)*86400 + EXTRACT(HOUR FROM run_time)*3600 "
+                 "+ EXTRACT(MINUTE FROM run_time)*60 + EXTRACT(SECOND FROM run_time)")
+
+    def compose(self) -> ComposeResult:
+        yield Static(id="ph-header")
+        yield Static("[dim]  SQLs com instabilidade de plano (>1 plano)[/]", classes="ph-lbl")
+        yield DataTable(id="ph-sql")
+        yield Static("[dim]  Planos do SQL selecionado — [ATUAL] / [MELHOR] / regressão em vermelho[/]", classes="ph-lbl")
+        yield DataTable(id="ph-plans")
+        yield Static(id="ph-plan")
+        yield Static(id="ph-timeline")
+
+    # ── header ────────────────────────────────────────────────────────────
+    def _render_header(self) -> Panel:
+        db = self.cache.get("health.db_info", {}) or {}
+        adaptive = self.cache.get("planhist.adaptive", None)
+        awr_ok = self.cache.get("planhist.awr_ok", False)
+        t = Table.grid(padding=(0, 2))
+        t.add_column(); t.add_column()
+        t.add_row("[dim]Versão:[/]", f"[bold]{db.get('version','?')}[/]")
+        if adaptive is None:
+            t.add_row("[dim]Adaptive plans:[/]", "[yellow]N/A — versão < 12c[/]")
+        else:
+            for k in ("optimizer_adaptive_plans", "optimizer_adaptive_statistics",
+                      "optimizer_adaptive_reporting_only", "optimizer_features_enable"):
+                if k in adaptive:
+                    v = str(adaptive[k])
+                    col = "green" if v.upper() in ("TRUE",) else ("red" if v.upper() == "FALSE" else "white")
+                    t.add_row(f"[dim]{k}:[/]", f"[{col}]{v}[/]")
+        t.add_row("[dim]AWR / Diagnostics Pack:[/]",
+                  "[green]disponível[/]" if awr_ok else "[yellow]indisponível — usando V$ (shared pool / última hora)[/]")
+        return Panel(t, title="[bold white]PLAN HIST — Histórico de Planos[/]",
+                     border_style="blue", padding=(0, 1))
+
+    async def refresh_data(self) -> None:
+        self.query_one("#ph-header", Static).update(self._render_header())
+
+        rows = self.cache.get("planhist.unstable", []) or []
+        self._sql_rows = rows
+        dt: DataTable = self.query_one("#ph-sql")
+        if not dt.columns:
+            dt.add_columns("SQL ID", "Schema", "Planos", "Execs", "PHV atual", "Adpt", "SQL Text")
+        cur = dt.cursor_row
+        dt.clear()
+        for r in rows:
+            dt.add_row(
+                str(r.get("sql_id", "")),
+                str(r.get("schema_name", "") or ""),
+                str(int(_numv(r, "plans"))),
+                f"{int(_numv(r, 'execs')):,}",
+                str(r.get("current_phv", "") or ""),
+                str(r.get("adaptive", "") or "—"),
+                str(r.get("sql_text", "") or "")[:60],
+                key=str(r.get("sql_id", "")),
+            )
+        if not rows:
+            dt.add_row("[dim]Nenhum SQL com múltiplos planos no shared pool[/]", "", "", "", "", "", "")
+        if dt.row_count:
+            if not self._focused_once:
+                try: dt.focus()
+                except Exception: pass
+                self._focused_once = True
+            if cur > 0:
+                dt.move_cursor(row=min(cur, dt.row_count - 1))
+
+    # ── interaction ───────────────────────────────────────────────────────
+    def on_data_table_row_highlighted(self, event: DataTable.RowHighlighted) -> None:
+        cid = getattr(event.control, "id", "")
+        idx = event.cursor_row
+        if cid == "ph-sql":
+            if not self._sql_rows or idx < 0 or idx >= len(self._sql_rows):
+                return
+            r = self._sql_rows[idx]
+            sql_id = str(r.get("sql_id", "") or "")
+            if not sql_id or sql_id == self._sel_sql_id:
+                return
+            self._sel_sql_id = sql_id
+            self._sel_current_phv = str(r.get("current_phv", "") or "")
+            self._sel_phv = ""
+            self.query_one("#ph-plan", Static).update("")
+            self.query_one("#ph-timeline", Static).update("")
+            self.run_worker(self._load_plans(sql_id), group="ph-plans", exclusive=True)
+        elif cid == "ph-plans":
+            if not self._plan_rows or idx < 0 or idx >= len(self._plan_rows):
+                return
+            phv = str(self._plan_rows[idx].get("phv", "") or "")
+            if not phv or phv == self._sel_phv:
+                return
+            self._sel_phv = phv
+            self.query_one("#ph-plan", Static).update(
+                Panel(Text(f"  Buscando plano {phv}…", style="dim"),
+                      title="[bold #bbc8e8]Execution Plan[/]", border_style="#384c7a", padding=(0, 1)))
+            self.run_worker(self._load_plan_detail(self._sel_sql_id, phv),
+                            group="ph-detail", exclusive=True)
+
+    def action_input_sql(self) -> None:
+        from widgets.sql_input_screen import SQLInputScreen
+        def on_result(sql_id: str | None) -> None:
+            if sql_id:
+                self._sel_sql_id = ""            # force reload
+                self._sel_current_phv = ""
+                self.run_worker(self._load_plans(sql_id.strip()), group="ph-plans", exclusive=True)
+                self._sel_sql_id = sql_id.strip()
+        self.app.push_screen(SQLInputScreen(), on_result)
+
+    # ── level 2: plans of a sql_id ────────────────────────────────────────
+    async def _load_plans(self, sql_id: str) -> None:
+        params = {"sql_id": sql_id, "days": self.AWR_DAYS}
+        try:
+            rows = await self.conn.execute_query(self._SQL_PLANS_AWR, params)
+        except Exception:
+            rows = []
+        source = "AWR"
+        if not rows:
+            try:
+                rows = await self.conn.execute_query(self._SQL_PLANS_CUR, {"sql_id": sql_id})
+                source = "V$SQL"
+            except Exception:
+                rows = []
+        # adaptive per PHV (always from GV$SQL)
+        try:
+            adpt = {str(r.get("phv")): r.get("adaptive") for r in
+                    (await self.conn.execute_query(self._SQL_ADAPTIVE_PHV, {"sql_id": sql_id}) or [])}
+        except Exception:
+            adpt = {}
+        # best-effort ASH resource enrichment (io/pga/temp/run)
+        ash = await self._ash_per_plan(sql_id)
+        for r in rows:
+            phv = str(r.get("phv"))
+            r["adaptive"] = r.get("adaptive") or adpt.get(phv)
+            r.update(ash.get(phv, {}))
+        self._plan_rows = rows
+        self._fill_plans_table(rows, source)
+
+    async def _ash_per_plan(self, sql_id: str) -> dict:
+        agg = (f"SELECT sql_plan_hash_value AS phv, COUNT(DISTINCT sql_exec_id) ash_execs, "
+               f"ROUND(AVG({self._RUN_SECS}),1) avg_run, ROUND(MAX({self._RUN_SECS}),1) max_run, "
+               f"ROUND(SUM(read_io)/1073741824,2) io_gb, ROUND(MAX(pga)/1048576) pga_mb, "
+               f"ROUND(MAX(temp)/1048576) temp_mb FROM (" + self._ASH_INNER + ") GROUP BY sql_plan_hash_value")
+        for view in ("dba_hist_active_sess_history", "v$active_session_history"):
+            try:
+                rows = await self.conn.execute_query(agg.format(view=view),
+                                                     {"sql_id": sql_id, "days": self.AWR_DAYS})
+            except Exception:
+                rows = []
+            if rows:
+                return {str(r.get("phv")): r for r in rows}
+        return {}
+
+    def _fill_plans_table(self, rows: list[dict], source: str) -> None:
+        dt: DataTable = self.query_one("#ph-plans")
+        if not dt.columns:
+            dt.add_columns("PHV", "Execs", "AvgEla(s)", "AvgLIO", "RunMax(s)",
+                           "IO GB", "PGA MB", "TEMP MB", "Adpt", "Last Seen", "Flag")
+        dt.clear()
+        etimes = [_numv(r, "avg_etime") for r in rows if _numv(r, "execs") > 0 and _numv(r, "avg_etime") > 0]
+        best = min(etimes) if etimes else 0.0
+        for r in rows:
+            phv = str(r.get("phv"))
+            et = _numv(r, "avg_etime")
+            is_cur = (phv == self._sel_current_phv)
+            is_best = (best and et == best)
+            regressed = bool(is_cur and best and et >= best * self.REGRESSION_FACTOR)
+            flag = []
+            if is_cur: flag.append("ATUAL")
+            if is_best: flag.append("MELHOR")
+            if regressed: flag.append("REGRESSÃO")
+            style = "red" if regressed else ("green" if is_best else "white")
+            def _f(v, fmt="{:,.0f}"):
+                return fmt.format(v) if v else "—"
+            dt.add_row(
+                Text(phv, style=style),
+                f"{int(_numv(r,'execs')):,}" if _numv(r,'execs') else "—",
+                f"{et:,.3f}" if et else "—",
+                _f(_numv(r, "avg_lio")),
+                _f(_numv(r, "max_run"), "{:,.1f}"),
+                _f(_numv(r, "io_gb"), "{:,.2f}"),
+                _f(_numv(r, "pga_mb")),
+                _f(_numv(r, "temp_mb")),
+                str(r.get("adaptive") or "—"),
+                str(r.get("last_seen") or "")[:19],
+                Text(" ".join(flag), style=style),
+                key=phv,
+            )
+        if not rows:
+            self.query_one("#ph-plans", DataTable).add_row(
+                f"[dim]sem histórico ({source}) — SQL pode não estar mais no shared pool[/]",
+                "", "", "", "", "", "", "", "", "", "")
+
+    # ── level 3: plan tree + ASH timeline ────────────────────────────────
+    async def _load_plan_detail(self, sql_id: str, phv: str) -> None:
+        try:
+            plan = await self.conn.execute_query(self._SQL_PLAN_CUR, {"sql_id": sql_id, "phv": int(phv)})
+        except Exception:
+            plan = []
+        if not plan:
+            try:
+                plan = await self.conn.execute_query(self._SQL_PLAN_HIST, {"sql_id": sql_id, "phv": int(phv)})
+            except Exception:
+                plan = []
+        if phv != self._sel_phv:
+            return
+        self.query_one("#ph-plan", Static).update(self._render_plan(phv, plan))
+        self.run_worker(self._load_timeline(sql_id, phv), group="ph-tl", exclusive=True)
+
+    def _render_plan(self, phv: str, plan: list[dict]) -> Panel:
+        if not plan:
+            return Panel(Text("  (plano não encontrado — nem no shared pool nem no AWR)", style="dim"),
+                         title=f"[bold #bbc8e8]Execution Plan — PHV {phv}[/]",
+                         border_style="#384c7a", padding=(0, 1))
+        t = Table(box=rich_box.SIMPLE_HEAD, expand=True, border_style="#384c7a")
+        for c, j in (("Id", "right"), ("Operation", "left"), ("Object", "left"),
+                     ("Rows", "right"), ("Cost", "right"), ("Bytes", "right")):
+            t.add_column(c, justify=j)
+        for ln in plan:
+            depth = int(_numv(ln, "depth"))
+            op = "  " * min(depth, 12) + str(ln.get("operation", "") or "")
+            t.add_row(
+                str(int(_numv(ln, "plan_line_id"))), op, str(ln.get("object_name", "") or "—"),
+                f"{int(_numv(ln,'cardinality')):,}" if _numv(ln,'cardinality') else "—",
+                f"{int(_numv(ln,'cost')):,}" if _numv(ln,'cost') else "—",
+                f"{int(_numv(ln,'bytes')):,}" if _numv(ln,'bytes') else "—",
+            )
+        return Panel(t, title=f"[bold #bbc8e8]Execution Plan — PHV {phv}[/]",
+                     border_style="#384c7a", padding=(0, 1))
+
+    async def _load_timeline(self, sql_id: str, phv: str) -> None:
+        tl_sel = (f"SELECT * FROM (SELECT sql_exec_start AS starting_time, {self._RUN_SECS} AS run_s, "
+                  f"read_io, pga, temp, sql_plan_hash_value AS phv FROM (" + self._ASH_INNER + ")) "
+                  f"WHERE phv = :phv ORDER BY starting_time DESC")
+        rows = []
+        for view in ("dba_hist_active_sess_history", "v$active_session_history"):
+            try:
+                rows = await self.conn.execute_query(
+                    tl_sel.format(view=view), {"sql_id": sql_id, "days": self.AWR_DAYS, "phv": int(phv)})
+            except Exception:
+                rows = []
+            if rows:
+                break
+        if phv != self._sel_phv:
+            return
+        if not rows:
+            self.query_one("#ph-timeline", Static).update(
+                Panel(Text("  (sem amostras de ASH para este plano na janela)", style="dim"),
+                      title="[bold #bbc8e8]Execuções (ASH) — timeline[/]", border_style="#384c7a", padding=(0, 1)))
+            return
+        t = Table(box=rich_box.SIMPLE_HEAD, expand=True, border_style="#384c7a")
+        for c in ("Início", "Run(s)", "IO MB", "PGA MB", "TEMP MB"):
+            t.add_column(c, justify="right" if c != "Início" else "left")
+        for r in rows[:20]:
+            t.add_row(
+                str(r.get("starting_time") or "")[:19],
+                f"{_numv(r,'run_s'):,.1f}",
+                f"{_numv(r,'read_io')/1048576:,.1f}",
+                f"{_numv(r,'pga')/1048576:,.0f}",
+                f"{_numv(r,'temp')/1048576:,.0f}",
+            )
+        self.query_one("#ph-timeline", Static).update(
+            Panel(t, title=f"[bold #bbc8e8]Execuções (ASH) — PHV {phv}[/]",
+                  border_style="#384c7a", padding=(0, 1)))
+
+
+# ---------------------------------------------------------------------------
+# JOBS — DBMS_SCHEDULER + DBMS_JOB monitor (business/DBA jobs only)
+# ---------------------------------------------------------------------------
+
+class JobsPanel(BasePanel):
+    """Oracle jobs monitor: counts, per-day success/fail chart, unified job
+    list (scheduler + dbms_job), running now, upcoming runs, and per-job run
+    history on selection."""
+    REFRESH_RATE = 4
+    DEFAULT_CSS = BasePanel.DEFAULT_CSS
+
+    HIST_DAYS = 14
+    _job_rows: list[dict] = []
+    _sel_key: str = ""
+    _focused_once: bool = False
+
+    _SQL_RUNDETAIL = """
+        SELECT CAST(actual_start_date AS TIMESTAMP) AS start_date, status,
+               ROUND(EXTRACT(DAY FROM run_duration)*86400 + EXTRACT(HOUR FROM run_duration)*3600
+                     + EXTRACT(MINUTE FROM run_duration)*60 + EXTRACT(SECOND FROM run_duration)) AS dur_s,
+               error# AS err, SUBSTR(additional_info,1,90) AS info
+        FROM dba_scheduler_job_run_details
+        WHERE owner = :owner AND job_name = :job
+          AND actual_start_date >= SYSDATE - :days
+        ORDER BY actual_start_date DESC
+    """
+
+    def compose(self) -> ComposeResult:
+        yield Static(id="jobs-header")
+        yield Static(id="jobs-chart")
+        yield Static("[dim]  Jobs (negócio / DBA) — selecione para ver o histórico[/]", classes="ph-lbl")
+        yield DataTable(id="jobs-table")
+        yield Static("[dim]  Próximas execuções[/]", classes="ph-lbl")
+        yield DataTable(id="jobs-upcoming")
+        yield Static(id="jobs-runhist")
+
+    def _render_header(self) -> Panel:
+        s = self.cache.get("jobs.summary", {}) or {}
+        run = int(_numv(s, "running"))
+        fail = int(_numv(s, "failed_24h"))
+        dis = int(_numv(s, "disabled"))
+        g = Table.grid(padding=(0, 3), expand=True)
+        for _ in range(6):
+            g.add_column(ratio=1)
+        g.add_row(
+            f"[dim]Total:[/] [bold]{int(_numv(s,'total'))}[/]",
+            f"[dim]Scheduler:[/] [bold]{int(_numv(s,'scheduler'))}[/]",
+            f"[dim]DBMS_JOB:[/] [bold]{int(_numv(s,'dbms_job'))}[/]",
+            f"[dim]Rodando:[/] [bold green]{run}[/]",
+            f"[dim]Falhas 24h:[/] [bold {'red' if fail else 'green'}]{fail}[/]",
+            f"[dim]Desabilitados:[/] [bold {'yellow' if dis else 'white'}]{dis}[/]",
+        )
+        return Panel(g, title="[bold white]JOBS — DBMS_SCHEDULER + DBMS_JOB[/]",
+                     border_style="blue", padding=(0, 1))
+
+    def _render_chart(self) -> Panel:
+        daily = self.cache.get("jobs.daily", []) or []
+        if not daily:
+            return Panel(Text("  (sem histórico de execuções na janela)", style="dim"),
+                         title="[bold #bbc8e8]Execuções por dia (14d)[/]",
+                         border_style="#384c7a", padding=(0, 1))
+        mx = max((_numv(d, "total") for d in daily), default=1) or 1
+        t = Table(box=rich_box.SIMPLE_HEAD, expand=True, border_style="#384c7a")
+        for c, j in (("Dia", "left"), ("OK", "right"), ("Falha", "right"),
+                     ("Avg(s)", "right"), ("", "left")):
+            t.add_column(c, justify=j)
+        for d in daily[-14:]:
+            ok = int(_numv(d, "ok")); fl = int(_numv(d, "failed"))
+            width = 40
+            ok_b = int(round(ok / mx * width)); fl_b = int(round(fl / mx * width))
+            bar = Text("█" * ok_b, style="green")
+            bar.append("█" * fl_b, style="red")
+            t.add_row(str(d.get("day", "")), str(ok),
+                      Text(str(fl), style="red" if fl else "dim"),
+                      f"{int(_numv(d,'avg_dur_s')):,}", bar)
+        return Panel(t, title="[bold #bbc8e8]Execuções por dia (14d) — ✓ verde / ✗ vermelho[/]",
+                     border_style="#384c7a", padding=(0, 1))
+
+    async def refresh_data(self) -> None:
+        self.query_one("#jobs-header", Static).update(self._render_header())
+        self.query_one("#jobs-chart", Static).update(self._render_chart())
+
+        jobs = self.cache.get("jobs.list", []) or []
+        self._job_rows = jobs
+        dt: DataTable = self.query_one("#jobs-table")
+        if not dt.columns:
+            dt.add_columns("Type", "Owner", "Job", "State", "En", "Last Start",
+                           "Runs", "Falhas", "Next Run")
+        cur = dt.cursor_row
+        dt.clear()
+        for j in jobs:
+            fails = int(_numv(j, "failures"))
+            enabled = str(j.get("enabled", "")).upper()
+            st = str(j.get("state", "") or "")
+            st_c = "red" if st in ("BROKEN", "FAILED") else ("dim" if enabled == "FALSE" else "white")
+            dt.add_row(
+                str(j.get("type", "")), str(j.get("owner", "") or ""),
+                str(j.get("name", "") or "")[:28],
+                Text(st, style=st_c), "Y" if enabled == "TRUE" else "N",
+                str(j.get("last_start", "") or "")[:19],
+                str(int(_numv(j, "run_count"))) if j.get("run_count") is not None else "—",
+                Text(str(fails), style="red" if fails else "dim"),
+                str(j.get("next_run", "") or "")[:19],
+                key=f"{j.get('owner')}|{j.get('name')}|{j.get('type')}",
+            )
+        if not jobs:
+            dt.add_row("[dim]Nenhum job de negócio/DBA encontrado[/]", "", "", "", "", "", "", "", "")
+
+        up = self.cache.get("jobs.upcoming", []) or []
+        udt: DataTable = self.query_one("#jobs-upcoming")
+        if not udt.columns:
+            udt.add_columns("Owner", "Job", "Next Run", "Schedule", "State")
+        udt.clear()
+        for u in up:
+            udt.add_row(
+                str(u.get("owner", "") or ""), str(u.get("job_name", "") or "")[:32],
+                str(u.get("next_run_date", "") or "")[:19],
+                str(u.get("schedule_type", "") or ""), str(u.get("state", "") or ""),
+            )
+        if not up:
+            udt.add_row("[dim]Nenhuma execução agendada[/]", "", "", "", "")
+
+        if dt.row_count:
+            if not self._focused_once:
+                try: dt.focus()
+                except Exception: pass
+                self._focused_once = True
+            if cur > 0:
+                dt.move_cursor(row=min(cur, dt.row_count - 1))
+
+    def on_data_table_row_highlighted(self, event: DataTable.RowHighlighted) -> None:
+        if getattr(event.control, "id", "") != "jobs-table":
+            return
+        idx = event.cursor_row
+        if not self._job_rows or idx < 0 or idx >= len(self._job_rows):
+            return
+        j = self._job_rows[idx]
+        if str(j.get("type")) != "SCHEDULER":
+            self.query_one("#jobs-runhist", Static).update(
+                Panel(Text("  (histórico detalhado disponível apenas para DBMS_SCHEDULER)", style="dim"),
+                      title="[bold #bbc8e8]Histórico de execuções[/]", border_style="#384c7a", padding=(0, 1)))
+            return
+        key = f"{j.get('owner')}|{j.get('name')}"
+        if key == self._sel_key:
+            return
+        self._sel_key = key
+        self.query_one("#jobs-runhist", Static).update(
+            Panel(Text(f"  Buscando histórico de {j.get('name')}…", style="dim"),
+                  title="[bold #bbc8e8]Histórico de execuções[/]", border_style="#384c7a", padding=(0, 1)))
+        self.run_worker(self._load_runhist(str(j.get("owner")), str(j.get("name"))),
+                        group="jobs-hist", exclusive=True)
+
+    async def _load_runhist(self, owner: str, job: str) -> None:
+        try:
+            rows = await self.conn.execute_query(
+                self._SQL_RUNDETAIL, {"owner": owner, "job": job, "days": self.HIST_DAYS})
+        except Exception:
+            rows = []
+        if f"{owner}|{job}" != self._sel_key:
+            return
+        if not rows:
+            self.query_one("#jobs-runhist", Static).update(
+                Panel(Text("  (sem execuções na janela de 14 dias)", style="dim"),
+                      title=f"[bold #bbc8e8]Histórico — {job}[/]", border_style="#384c7a", padding=(0, 1)))
+            return
+        t = Table(box=rich_box.SIMPLE_HEAD, expand=True, border_style="#384c7a")
+        for c, j2 in (("Início", "left"), ("Status", "left"), ("Dur(s)", "right"),
+                      ("ORA-", "right"), ("Info", "left")):
+            t.add_column(c, justify=j2)
+        for r in rows[:20]:
+            status = str(r.get("status", "") or "")
+            sc = "green" if status == "SUCCEEDED" else "red"
+            err = int(_numv(r, "err"))
+            t.add_row(
+                str(r.get("start_date", "") or "")[:19],
+                Text(status, style=sc),
+                f"{int(_numv(r,'dur_s')):,}",
+                Text(str(err), style="red") if err else "—",
+                str(r.get("info", "") or "")[:50],
+            )
+        self.query_one("#jobs-runhist", Static).update(
+            Panel(t, title=f"[bold #bbc8e8]Histórico — {job} (14d)[/]",
+                  border_style="#384c7a", padding=(0, 1)))
