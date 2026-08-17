@@ -27,7 +27,7 @@
 
 **ORA BRABO** é uma ferramenta de monitoramento Oracle Database que roda 100% no terminal via SSH — sem agente, sem Java, sem browser, sem licença de OEM.
 
-Inspirada no [Dolphie](https://github.com/charles-001/dolphie) (MySQL), foi construída para DBAs Oracle que vivem no terminal e precisam de uma visão operacional completa em tempo real: sessões, SQL, waits, bloqueios, RAC, Data Guard, RMAN, ASM, Exadata e muito mais — tudo em uma única interface interativa, com **múltiplos bancos em abas simultâneas**, **Thin ou Thick mode**, e **instalação offline** para ambientes air-gapped.
+Inspirada no [Dolphie](https://github.com/charles-001/dolphie) (MySQL), foi construída para DBAs Oracle que vivem no terminal e precisam de uma visão operacional completa em tempo real: sessões, SQL, waits, bloqueios, RAC, Data Guard, RMAN, ASM, Exadata, histórico de planos, jobs e muito mais — tudo em uma única interface interativa, com **múltiplos bancos em abas simultâneas**, **Thin ou Thick mode**, e **instalação offline** para ambientes air-gapped.
 
 > *"O que o Dolphie é pro MySQL, o ORA BRABO é pro Oracle — com funcionalidades do OEM, Foglight e Toad Monitor numa TUI moderna."*
 
@@ -118,6 +118,12 @@ Inspirada no [Dolphie](https://github.com/charles-001/dolphie) (MySQL), foi cons
 ### 📄 Report (^9)
 > Geração de **report PDF profissional** da conexão atual (tecla `G`): capa com KPIs, health com gráficos de tendência, top waits/tablespaces/ASM em gráficos de barra, e **Top 5 SQL mais custosos com plano de execução completo** (estilo DBMS_XPLAN). Também gera **AWR report em texto** (tecla `R` no painel AWR).
 
+### 🧬 Plan History (^0)
+> Histórico de planos por `sql_id`: parâmetros de **adaptive plans** (`optimizer_adaptive_*`) com valor atual e status do Diagnostics Pack. Lista de SQLs com **instabilidade de plano** (mais de um `plan_hash_value`). Ao selecionar um SQL, mostra cada plano com execuções, avg elapsed, avg LIO, I/O/PGA/TEMP (ASH), marcando **[ATUAL] / [MELHOR] / 🔴 REGRESSÃO**. Ao selecionar um plano, exibe o **plano de execução** (V$SQL_PLAN / DBA_HIST_SQL_PLAN) e a **timeline de execuções (ASH)**. Funciona com AWR ou cai para V$ quando não há Diagnostics Pack.
+
+### ⏰ Jobs Monitor (`j`)
+> Monitor de jobs Oracle — **DBMS_SCHEDULER + DBMS_JOB**, apenas jobs de **negócio/DBA** (schemas do Oracle excluídos). Header com totais, jobs rodando agora, falhas nas últimas 24h e desabilitados. **Gráfico de execuções por dia** (14 dias) com sucesso × falha e duração média. Lista unificada com State, Enabled, Last Start, Run Count, Falhas e Next Run. **Próximas execuções** por `next_run_date`. Ao selecionar um job, **histórico de execuções** com status, duração, ORA- e info do erro.
+
 ### 🚀 Exadata (`x`)
 > Exadata Monitor com DB Nodes e Storage Cells. Smart Scan %, Storage Index %, Offload Efficiency %, Flash Cache Hit % com barras visuais. Cell Servers com IP, Status e Version. Top SQLs por Offload Efficiency %, Cell Wait Events, HCC Compressed Objects e parâmetros Exadata.
 ![Exadata](docs/images/23_exadata.png)
@@ -131,7 +137,6 @@ Inspirada no [Dolphie](https://github.com/charles-001/dolphie) (MySQL), foi cons
 
 | Versão | Suporte |
 |--------|---------|
-| Oracle 10g | ✅ (Thick mode) |
 | Oracle 11g | ✅ (Thick mode) |
 | Oracle 12c R1/R2 | ✅ |
 | Oracle 18c | ✅ |
@@ -240,7 +245,7 @@ alias ora-brabo='source ~/ora-brabo/.venv/bin/activate && cd ~/ora-brabo && pyth
 | `F11` | ASH |
 | `F12` | Advisor |
 
-### Sub-painéis (Ctrl)
+### Sub-painéis
 | Tecla | Painel |
 |-------|--------|
 | `^1` | I/O Activity |
@@ -252,6 +257,8 @@ alias ora-brabo='source ~/ora-brabo/.venv/bin/activate && cd ~/ora-brabo && pyth
 | `^7` | Plan Baselines |
 | `^8` | Parallel Query |
 | `^9` | Report (PDF) |
+| `^0` | Plan History |
+| `j` | Jobs Monitor |
 | `x` | Exadata |
 | `p` | PDB |
 
@@ -271,6 +278,7 @@ alias ora-brabo='source ~/ora-brabo/.venv/bin/activate && cd ~/ora-brabo && pyth
 | `T` | Trace Session |
 | `E` | Explain Plan |
 | `D` | Session Detail |
+| `S` | Informar SQL ID (Plan History) |
 | `G` | Gerar Report PDF |
 | `R` | Gerar AWR Report (painel AWR) |
 | `/` | Filtrar |
@@ -291,15 +299,15 @@ ora_brabo/
 │   ├── connection_session.py    # Bundle por aba: conn + cache + scheduler + advisor
 │   ├── connections_store.py     # Conexões salvas (~/.ora_brabo/connections.json)
 │   ├── cache.py                 # MetricsCache: TTL + ring-buffer de 120 pontos
-│   ├── scheduler.py             # Scheduler async — 17 collectors em tiers
+│   ├── scheduler.py             # Scheduler async — 19 collectors em tiers
 │   └── demo_data.py             # Dados simulados (--demo, sem banco)
-├── collectors/                  # 17 collectors independentes (async)
+├── collectors/                  # 19 collectors independentes (async)
 │   ├── health.py  sessions.py  sql.py  waits.py  rac.py
 │   ├── dg.py  asm.py  rman.py  io_activity.py  pdb.py
-│   ├── exadata.py  advisor.py  memory_advisor.py
-│   └── awr.py  objects.py  sqlmon.py  alertlog.py
+│   ├── exadata.py  advisor.py  memory_advisor.py  jobs.py
+│   └── awr.py  objects.py  sqlmon.py  alertlog.py  plan_hist.py
 ├── widgets/
-│   ├── panels.py                # 24 painéis Textual
+│   ├── panels.py                # 26 painéis Textual
 │   ├── add_connection_modal.py  # Tela de conexão + histórico salvo
 │   ├── connection_pane.py       # Uma aba = uma conexão
 │   └── explain_screen.py, ...   # Overlays (explain plan, SQL text, help)
@@ -315,7 +323,7 @@ ora_brabo/
 - **Zero Oracle Client** no Thin Mode — conecta via `oracledb` direto do Python (Thick opcional para 11g/NNE)
 - **Multi-banco simultâneo** — cada aba é uma `ConnectionSession` isolada (conn + cache + scheduler + advisor + health-check com reconexão automática)
 - **Async nativo** — collectors rodam em paralelo sem bloquear a UI
-- **Refresh em tiers** — coleta por peso da query: realtime (Health/Waits ~2s), fast (Sessions/SQL/RAC/SQLMon ~5s), medium (ASM/DG/RMAN/IO/PDB ~12s), slow (advisors ~30s), heavy (AWR/Objects/AlertLog ~60s) — e **coleta imediata ao trocar de painel**
+- **Refresh em tiers** — coleta por peso da query: realtime (Health/Waits ~2s), fast (Sessions/SQL/RAC/SQLMon ~5s), medium (ASM/DG/RMAN/IO/PDB/Jobs ~12s), slow (advisors ~30s), heavy (AWR/Objects/AlertLog/Plan Hist ~60s) — e **coleta imediata ao trocar de painel**
 - **Ring-buffer de métricas** — 120 pontos históricos por métrica para gráficos em tempo real
 - **RAC-aware** — detecção automática, usa `GV$` quando disponível
 - **Exadata-aware** — detecção automática de Cell Servers e Smart Scan
@@ -353,9 +361,12 @@ ora_brabo/
 - [x] Abrir múltiplas abas por linha de comando (`--start-saved`)
 - [x] Refresh em tiers + coleta ao trocar de painel
 - [x] Report PDF com gráficos e Top 5 SQL com plano de execução
+- [x] **Plan History — histórico de planos por sql_id, regressão e adaptive plans**
+- [x] **Jobs Monitor — DBMS_SCHEDULER + DBMS_JOB com gráficos de falha e próximas execuções**
 - [x] Flag `--version` com banner
 - [x] Instalação offline (air-gapped) com wheels embutidos
-- [x] Exportação de relatórios em formato PDF
+- [ ] Exportação de relatórios em HTML / CSV
+- [ ] Modo cliente/servidor (monitorar centenas de bancos)
 
 ---
 
