@@ -120,9 +120,11 @@ Inspirada no [Dolphie](https://github.com/charles-001/dolphie) (MySQL), foi cons
 
 ### 🧬 Plan History (^0)
 > Histórico de planos por `sql_id`: parâmetros de **adaptive plans** (`optimizer_adaptive_*`) com valor atual e status do Diagnostics Pack. Lista de SQLs com **instabilidade de plano** (mais de um `plan_hash_value`). Ao selecionar um SQL, mostra cada plano com execuções, avg elapsed, avg LIO, I/O/PGA/TEMP (ASH), marcando **[ATUAL] / [MELHOR] / 🔴 REGRESSÃO**. Ao selecionar um plano, exibe o **plano de execução** (V$SQL_PLAN / DBA_HIST_SQL_PLAN) e a **timeline de execuções (ASH)**. Funciona com AWR ou cai para V$ quando não há Diagnostics Pack.
+![Plan History](docs/images/25_plan_hist.png)
 
 ### ⏰ Jobs Monitor (`j`)
 > Monitor de jobs Oracle — **DBMS_SCHEDULER + DBMS_JOB**, apenas jobs de **negócio/DBA** (schemas do Oracle excluídos). Header com totais, jobs rodando agora, falhas nas últimas 24h e desabilitados. **Gráfico de execuções por dia** (14 dias) com sucesso × falha e duração média. Lista unificada com State, Enabled, Last Start, Run Count, Falhas e Next Run. **Próximas execuções** por `next_run_date`. Ao selecionar um job, **histórico de execuções** com status, duração, ORA- e info do erro.
+![Jobs](docs/images/26_jobs.png)
 
 ### 🚀 Exadata (`x`)
 > Exadata Monitor com DB Nodes e Storage Cells. Smart Scan %, Storage Index %, Offload Efficiency %, Flash Cache Hit % com barras visuais. Cell Servers com IP, Status e Version. Top SQLs por Offload Efficiency %, Cell Wait Events, HCC Compressed Objects e parâmetros Exadata.
@@ -137,7 +139,6 @@ Inspirada no [Dolphie](https://github.com/charles-001/dolphie) (MySQL), foi cons
 
 | Versão | Suporte |
 |--------|---------|
-| Oracle 10g | ✅ (Thick mode) |
 | Oracle 11g | ✅ (Thick mode) |
 | Oracle 12c R1/R2 | ✅ |
 | Oracle 18c | ✅ |
